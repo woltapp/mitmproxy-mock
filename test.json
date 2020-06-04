@@ -89,6 +89,10 @@
         { "response": "<body><h1>Tails</h1></body>" }
       ]
     },
+    "/pass":{
+      "response": "<blink>This is never actually sent due to pass</blink>",
+      "pass": true
+    },
     "*":{
       "host":[
         ".com",
@@ -97,17 +101,35 @@
     }
   },
   "response":{
-    "/v1/pages/front":[
-      {
+    "/test.json":{
+      "status": 404,
+      "replace":{
         "status": 200,
-        "content":[ ".", "sections", "[any]", ".", "template", "=", "out_of_reach" ],
-        "modify": {
-          "content":[
-            { "merge": "./out_of_reach.json" }
-          ]
-        }
+        "content": "./test.json"
       }
-    ]
+    },
+    "/foo.json":{
+      "status": 200,
+      "content":{
+        "foo": "~[Oo]+$",
+        "bar": 42,
+        "array":[ { "id": 1 } ]
+      },
+      "modify":[
+        "/bar/BAR",
+        {
+          "merge":{
+            "mock": "inserted_item",
+            "baz": "replaced_item",
+            "array":[ { "id": 666, "note": "added element", "foo": false } ]
+          },
+          "delete":{
+            "foo": {},
+            "array":[ { "id": 0 } ]
+          }          
+        }
+      ]
+    }
   },
   "charset": "utf-8"
 }
