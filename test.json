@@ -88,16 +88,26 @@
         { "response": "<body><h1>Tails</h1></body>" }
       ]
     },
+    "/pass":{
+      "response": "<blink>This is never actually sent due to pass</blink>",
+      "pass": true
+    },
+    "/unreliable":{
+      "random":[
+        { "pass": true }, { "pass": true }, { "pass": true },
+        { "response": {
+            "status": 500,
+            "content": "<h1>500 - Random Error</h1>"
+          }
+        }
+      ]
+    },
     "/google":{
       "modify":{
         "host": "www.google.com",
         "path": "/",
         "query":{ "q": "mitmproxy" }
       }
-    },
-    "/pass":{
-      "response": "<blink>This is never actually sent due to pass</blink>",
-      "pass": true
     },
     "~^/ba(|.)$":{
       "response": "<body><h1>Ba</h1></body>"
