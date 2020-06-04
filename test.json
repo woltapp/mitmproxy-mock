@@ -1,0 +1,53 @@
+{
+  "request":{
+    "/test":{
+      "response":{
+        "type": "text/html",
+        "content": "<body><h1>TEST</h1></body>"
+      }
+    },
+    "/file":{
+      "response":{
+          "content": "./test.json"
+      }
+    },
+    "/once":{
+      "response": {
+        "content": "<body><h1>Twice</h1><p>You have reloaded the page.</p></body>",
+        "status": 418
+      },
+      "once":{
+        "response": {
+          "content": "<body><h1>Once</h1><p>Reload and this will be gone.</p></body>"
+        }
+      }
+    },
+    "/root":{
+      "modify":{
+        "path":"/"              
+      }
+    },
+    "*":{
+      "host":[
+        "arkku.com",
+        "arkku.dev"
+      ]
+    }
+  },
+  "response":{
+    "/v1/pages/front":[
+      {
+        "match": {
+          "status": 200,
+          "content":[ ".", "sections", "[any]", ".", "template", "=", "out_of_reach" ]
+        },
+        "modify": {
+          "content":[
+            { "merge": "./out_of_reach.json" }
+          ]
+        }
+      }
+    ]
+  },
+  "charset": "utf-8"
+}
