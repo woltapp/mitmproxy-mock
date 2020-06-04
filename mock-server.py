@@ -28,7 +28,6 @@ def host_matches(host: str, allow) -> bool:
     - If the patterns ends with a dot, `host` must start with the pattern
     - Otherwise `host` must equal the pattern
     """
-    ctx.log.info("Matching {} against {}".format(host, allow))
     if isinstance(allow, str):
         if allow.startswith("."):
             return host.endswith(allow[1:])
@@ -50,10 +49,16 @@ def matches_value_or_list(value, allow) -> bool:
     Return whether `value` matches `allow`.
 
     `allow` may either be of the same type as `value`, or a list of such items,
-    in which case returns True if `value` matches any element of `allow`.
+    in which case returns True if `value` matches any element of `allow`. In
+    case of strings, value may have a tilde prefix (`~`) in which case its
+    suffix is treated as a regular expression.
     """
     if type(value) is type(allow):
-        return value == allow
+        if isinstance(allow, str) and allow.startswith("~"):
+            allow_re = re.compile(allow[1:], re.X)
+            return bool(allow_re.search(value)) or value == allow
+        else:
+            return value == allow
     else:
         for allowed in allow:
             if matches_value_or_list(str, allowed):
@@ -93,18 +98,22 @@ def is_subset(subset, superset) -> bool:
     in subset may be prefixed with a tilde (`~`) in which case the suffix is
     interpreted as a regular expression.
     """
-    if isinstance(subset, dict):
-        return all(key in superset and is_subset(subset[key], superset[key]) for key in subset)
-    elif isinstance(subset, list):
-        return all(any(is_subset(subitem, superitem) for superitem in superset) for subitem in subset)
-    elif isinstance(subset, str):
-        if subset.startswith("~"):
-            allow_re = re.compile(subset[1:], re.M | re.X | re.S)
-            return bool(allow_re.search(str(superset)))
+    try:
+        if isinstance(subset, dict):
+            return all(key in superset and is_subset(subset[key], superset[key]) for key in subset)
+        elif isinstance(subset, list):
+            return all(any(is_subset(subitem, superitem) for superitem in superset) for subitem in subset)
+        elif isinstance(subset, str):
+            if subset.startswith("~"):
+                allow_re = re.compile(subset[1:], re.M | re.X | re.S)
+                return bool(allow_re.search(str(superset)))
+            else:
+                return str(superset) == subset
         else:
-            return str(superset) == subset
-    else:
-        return subset == superset
+            return subset == superset
+    except Exception as error:
+        ctx.log.debug("is_subset incompatible types: {}: {} {}".format(error, subset, superset))
+        return False
 
 def content_matches(content: str, allow) -> bool:
     """
@@ -159,19 +168,30 @@ def merge_content(merge, content):
     Merges `merge` into `content` recursively for dictionaries and lists.
     """
     if isinstance(merge, dict):
-        for key in merge:
-            value = merge[key]
-            if isinstance(value, dict):
-                content[key] = merge_content(value, content.get(key, {}))
-            elif isinstance(value, list):
-                content[key] = content.get(key, []) + value
-            else:
-                content[key] = value
+        if isinstance(content, dict):
+            for key in merge:
+                value, content_value = merge[key], content.get(key)
+                if content_value:
+                    content[key] = merge_content(value, content_value)
+                else:
+                    content[key] = value
+        elif isinstance(content, list) and ("where" in merge):
+            where = merge["where"]
+            for index, element in enumerate(content):
+                if is_subset(where, element):
+                    if "merge" in merge:
+                        content[index] = merge_content(merge["merge"], element)
+                    elif "replace" in merge:
+                        content[index] = merge["replace"]
+        else:
+            content = merge
     elif isinstance(merge, list):
         if isinstance(content, list):
-            content.append(merge)
+            content = content + merge
         else:
             content = [ content ] + merge
+    else:
+        content = merge
     return content
 
 def delete_content(delete, content):
@@ -190,7 +210,8 @@ def delete_content(delete, content):
                 if value:
                     content_value = content.get(key)
                     if isinstance(content_value, dict):
-                        content[key] = delete_content(value, content_value)
+                        new_content = delete_content(value, content_value)
+                        content[key] = new_content
                 else:
                     content.pop(key, None)
             elif isinstance(value, list):
@@ -236,7 +257,6 @@ def count_based_config(path, config: dict) -> dict:
         result.update(count_config.get("*", {}))
         result.update(count_config.get("even" if (count % 2) == 0 else "odd", {}))
         result.update(count_config.get(str(count), {}))
-        ctx.log.debug("Count {} for {}: {}".format(count, path, result))
     return result
 
 def encode_content(content) -> (bytes, str):
@@ -271,7 +291,7 @@ def encode_content(content) -> (bytes, str):
     else:
         return json.dumps(content).encode("utf-8"), content_type
 
-def make_response(response, status = 200, content = {}, headers = {}) -> http.HTTPResponse:
+def make_response(response, status, content, headers) -> http.HTTPResponse:
     """
     Return a new `HTTPResponse` object constructed from the configuration
     `response`, with the status code, content and headers defaulting to the
@@ -295,7 +315,7 @@ def make_response(response, status = 200, content = {}, headers = {}) -> http.HT
         content_type = "{}; charset={}".format(content_type, charset)
     headers = {**headers, **{ "Content-Type": content_type }}
     headers.update(response.get("headers", {}))
-    status = response.get("status", 200)
+    status = response.get("status", status)
     ctx.log.debug("Response {}: headers={} content={}".format(status, headers, content))
     return http.HTTPResponse.wrap(
         net.http.Response.make(status, content, headers),
@@ -311,14 +331,33 @@ def configure(updated) -> None:
         mock_filename = ctx.options.mock
         with open(mock_filename) as mock_config_file:
             try:
-                new_config = json.load(mock_config_file)
                 mock_config.clear()
+                new_config = json.load(mock_config_file)
                 mock_config.update(new_config)
                 ctx.log.info("Mock configuration: {}".format(mock_filename))
-            except ValueError as error:
+            except Exception as error:
                 ctx.log.error("Error: {}: {}".format(mock_filename, error))
         if not mock_config:
             ctx.log.error("No configuration: use --set config.json")
+            return
+        hit_count.clear()
+        cycle_index.clear()
+        re_request.clear()
+        re_response.clear()
+        for path in new_config.get("request", {}):
+            if path.startswith("~"):
+                try:
+                    path_re = re.compile(path[1:], re.X)
+                    re_request[path_re] = mock_config["request"][path]
+                except Exception as error:
+                    ctx.log.error("Error: {}: invalid request regex: {}".format(path, error))
+        for path in new_config.get("response", {}):
+            if path.startswith("~"):
+                try:
+                    path_re = re.compile(path[1:], re.X)
+                    re_response[path_re] = mock_config["response"][path]
+                except Exception as error:
+                    ctx.log.error("Error: {}: invalid response regex: {}".format(path, error))
 
 def resolve_config(flow: http.HTTPFlow, event: str) -> Optional[dict]:
     """
@@ -326,17 +365,27 @@ def resolve_config(flow: http.HTTPFlow, event: str) -> Optional[dict]:
     the flow state and the global mock configuration, or `None` if no
     configuration item matches the event.
     """
+    is_request = (event == "request")
     path = flow.request.path.split("?")[0]
     handlers = mock_config.get(event, {})
     path_handler = handlers.get(flow.request.path, handlers.get(path))
     if path_handler is None:
-        return None
-    is_request = (event == "request")
+        # Iterate over the regexes if there is no direct match
+        re_handlers = (re_request if is_request else re_response)
+        for path_re in re_handlers:
+            if path_re.search(flow.request.path):
+                path_handler = re_handlers[path_re]
+                break
+        if path_handler is None:
+            return None
     config = handlers.get("*", {})
     if isinstance(path_handler, list):
         matched = None
         for handler in path_handler:
-            handler_config = {**config, **handler}
+            if isinstance(config, list):
+                handler_config = {**handler}
+            else:
+                handler_config = {**config, **handler}
             if request_matches_config(flow.request, handler_config) and (is_request or response_matches_config(flow.response, handler_config)):
                 matched = handler_config
                 break
@@ -344,13 +393,26 @@ def resolve_config(flow: http.HTTPFlow, event: str) -> Optional[dict]:
             return None
         config = matched
     else:
-        config = {**config, **path_handler}
+        if isinstance(config, list):
+            for handler in config:
+                handler_config = {**handler, **path_handler}
+                if request_matches_config(flow.request, handler_config) and (is_request or response_matches_config(flow.response, handler_config)):
+                    config = handler_config
+                    break
+        else:
+            config = {**config, **path_handler}
         if not (request_matches_config(flow.request, config) and (is_request or response_matches_config(flow.response, config))):
             return None
     config.update(count_based_config(path, config))
     random_configs = config.get("random")
     if random_configs:
         config.update(random.choice(random_configs))
+    cycle = config.get("cycle", config.get("round"))
+    if cycle:
+        cycle_id = config.get("cycle-id", path)
+        index = cycle_index.get(cycle_id, 0)
+        cycle_index[cycle_id] = ((index + 1) % len(cycle))
+        config.update(cycle[index])
     if config.get("pass", False):
         return None
     return config
@@ -378,7 +440,7 @@ def request(flow: http.HTTPFlow) -> None:
         flow.request.headers.update(modify.get("headers", {}))
     response = config.get("response")
     if response:
-        flow.response = make_response(response)
+        flow.response = make_response(response, 200, "", {})
         ctx.log.info("Mock {}".format(flow.request.path))
 
 # Called before returning a response from the remote server. This can be
@@ -395,8 +457,8 @@ def response(flow: http.HTTPFlow) -> None:
     if replace:
         response = replace.get("response", replace)
         if response:
-            flow.response = make_response(response)
-            ctx.log.debug("Replace response {}: {}".format(flow.request.path, flow.response))
+            flow.response = make_response(response, flow.response.status_code, flow.response.content, flow.response.headers)
+            ctx.log.info("Replace response {}: {}".format(flow.request.path, flow.response))
     modify = config.get("modify", [])
     if isinstance(modify, dict) or isinstance(modify, str):
         modify = [ modify ]
@@ -451,5 +513,17 @@ def response(flow: http.HTTPFlow) -> None:
     if modify:
         ctx.log.info("Modify response {}: {}".format(flow.request.path, modify))
 
+# The global configuration.
 mock_config = {}
+
+# Regex paths for requests.
+re_request = {}
+
+# Regex paths for responses.
+re_response = {}
+
+# Hit counters (for `count` and `once`).
 hit_count = {}
+
+# Round-robin cycle indices (for `cycle`).
+cycle_index = {}

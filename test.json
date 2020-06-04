@@ -17,11 +17,14 @@
           "status": 200,
           "content": "<body><h1>Once</h1><p>Reload and this page will be gone.</p></body>"
         }
-      },
-      "response":{
-        "status": 404,
-        "content": ""
       }
+    },
+    "/cycle":{
+      "cycle":[
+        { "response": "<body><h1>A</h1></body>" },
+        { "response": "<body><h1>B</h1></body>" },
+        { "response": "<body><h1>C</h1></body>" }
+      ]
     },
     "/count":{
       "count":{
@@ -29,27 +32,31 @@
           "response": {
             "content": "<body><h1>1</h1><p>You have loaded this page once.</p></body>",
             "status": 418
-          }
+          },
+          "cycle": {}
         },
         "2": {
-          "response": "<body><h1>2</h1><p>You have loaded this page two times.</p></body>"
+          "response": "<body><h1>2</h1><p>You have loaded this page two times.</p></body>",
+          "cycle": {}
         },
         "6": {
-          "response": "<body><h1>6</h1><p>You have loaded this page six times.</p></body>"  
+          "response": "<body><h1>6</h1><p>You have loaded this page six times.</p></body>",
+          "cycle": {}
         },
         "even": {
-          "response": "<body><h1>Even</h1><p>You have loaded this page an even number of times.</p></body>"
+          "cycle-id": "even_count",
+          "cycle":[
+            { "response": "<body><h1>Even</h1><p>You have loaded this page an even number of times.</p></body>" },
+            { "response": "<body><h1>even</h1><p>You have loaded this page an even number of times.</p></body>" }
+          ]
         },
-        "*": {
-          "response": "<body><h1>Odd</h1><p>You have loaded this page an odd number of times.</p></body>"          
+        "odd":{
+          "cycle-id": "odd_count",
+          "cycle":[
+            { "response": "<body><h1>Odd</h1><p>You have loaded this page an odd number of times.</p></body>" },
+            { "response": "<body><h1>odd</h1><p>You have loaded this page an odd number of times.</p></body>" }
+          ]
         }
-      }
-    },
-    "/google":{
-      "modify":{
-        "host": "www.google.com",
-        "path": "/",
-        "query":{ "q": "mitmproxy" }
       }
     },
     "/foo":[
@@ -58,29 +65,21 @@
         "response": "<body><h1>FOO</h1></body>"
       },
       {
-        "query": { "q": "bar" },
+        "query": { "q": "~ba[rz]" },
         "count":{
           "id": "barbaz",
-          "even":{ "response": "<body><h1>Baz</h1></body>" }
-        },
-        "response": "<body><h1>Bar</h1></body>"
-      },
-      {
-        "query": { "q": "baz" },
-        "count":{
-          "id": "barbaz",
-          "even":{ "response": "<body><h1>Baz</h1></body>" }
-        },
-        "response": "<body><h1>Bar</h1></body>"
+          "even":{ "response": "<body><h1>Baz</h1></body>" },
+          "odd":{ "response": "<body><h1>Bar</h1></body>" }
+        }
       },
       {
         "count":{
           "id": "foobar",
           "1":{ "response": "<body><h1>Foo</h1></body>" },
           "2":{ "response": "<body><h1>Bar</h1></body>" },
-          "3":{ "response": "<body><h1>Baz</h1></body>" }
-        },
-        "response": "<body><h1>Foobar</h1></body>"
+          "3":{ "response": "<body><h1>Baz</h1></body>" },
+          "*":{ "response": "<body><h1>Foobar</h1></body>" }
+        }
       }
     ],
     "/flip":{
@@ -89,9 +88,19 @@
         { "response": "<body><h1>Tails</h1></body>" }
       ]
     },
+    "/google":{
+      "modify":{
+        "host": "www.google.com",
+        "path": "/",
+        "query":{ "q": "mitmproxy" }
+      }
+    },
     "/pass":{
       "response": "<blink>This is never actually sent due to pass</blink>",
       "pass": true
+    },
+    "~^/ba(|.)$":{
+      "response": "<body><h1>Ba</h1></body>"
     },
     "*":{
       "host":[
@@ -105,7 +114,8 @@
       "status": 404,
       "replace":{
         "status": 200,
-        "content": "./test.json"
+        "content": "./test.json",
+        "type": "application/json"
       }
     },
     "/foo.json":{
@@ -122,12 +132,49 @@
             "mock": "inserted_item",
             "baz": "replaced_item",
             "array":[ { "id": 666, "note": "added element", "foo": false } ]
-          },
+          }
+        },
+        {
           "delete":{
             "foo": {},
             "array":[ { "id": 0 } ]
           }          
+        },
+        {
+          "merge":{
+            "array":{
+              "where": { "foo": true },
+              "merge": { "foo": false, "replaced_foo": true }
+            }
+          }
+        },
+        {
+          "merge":{
+            "array":{
+              "where": { "id": 4 },
+              "replace": { "id": 4, "foo": false, "replaced_element": true }
+            }
+          }
+        },
+        {
+          "replace":{
+            "other_array": [ {"id": "only_element_after_replace"} ]
+          }
         }
+      ]
+    },
+    "/pass":{
+      "pass": true
+    },
+    "~":{
+        "status": 404,
+        "replace":{
+          "content": "<body><h1>404 - Not Found</h1><p>Custom error.</p></body>"
+        }
+      },
+    "*":{
+      "host":[
+        ".com"
       ]
     }
   },
