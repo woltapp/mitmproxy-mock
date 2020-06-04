@@ -47,12 +47,30 @@
     },
     "/google":{
       "modify":{
-        "scheme": "https",
         "host": "www.google.com",
         "path": "/",
         "query":{ "q": "mitmproxy" }
       }
     },
+    "/multi":[
+      {
+        "query": { "q": "foo" },
+        "response": "<body><h1>Foo</h1></body>"
+      },
+      {
+        "query": { "q": "bar" },
+        "count":{
+          "id": "bar",
+          "2":{
+            "response": "<body><h1>Baz</h1></body>"
+          }
+        },
+        "response": "<body><h1>Bar</h1></body>"
+      },
+      {
+        "response": "<body><h1>Foobar</h1></body>"
+      }
+    ],
     "*":{
       "host":[
         ".com",

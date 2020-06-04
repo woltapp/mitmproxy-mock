@@ -54,6 +54,7 @@ def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
 
     - `host` (some patterns supported, see `host_matches`)
     - `scheme` (exact match or list)
+    - `query` (keys are exact, values either exact or list)
     """
     if not config:
         return False
@@ -64,6 +65,13 @@ def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
     required_scheme = config.get("scheme", mock_config.get("scheme"))
     if required_scheme and not matches_value_or_list(request.scheme, required_scheme):
         return False
+    required_query = config.get("query", mock_config.get("query"))
+    if required_query:
+        query = request.query
+        for key in required_query:
+            value = required_query[key]
+            if not ((key in query) and matches_value_or_list(query[key], value)):
+                return False
     return True
 
 def response_matches_config(response: http.HTTPResponse, config: dict) -> bool:
@@ -94,8 +102,9 @@ def count_based_config(path, config: dict) -> dict:
     if (not count_config) and ("once" in config):
         count_config = { "1": config["once"] }
     if count_config:
-        count = hit_count.get(path, 0) + 1
-        hit_count[path] = count
+        count_id = count_config.get("id", path)
+        count = hit_count.get(count_id, 0) + 1
+        hit_count[count_id] = count
         result.update(count_config.get("*", {}))
         result.update(count_config.get("even" if (count % 2) == 0 else "odd", {}))
         result.update(count_config.get(str(count), {}))
@@ -188,12 +197,27 @@ def configure(updated) -> None:
 # server. Handling requests allows mocking data for endpoints not present
 # on remote, or modifying the outgoing request.
 def request(flow: http.HTTPFlow) -> None:
+    ctx.log.debug("Request {}: {}".format(flow.request.path, flow.request))
     path = flow.request.path.split("?")[0]
     handlers = mock_config.get("request", {})
-    config = {**handlers.get("*", {}), **handlers.get(path, {})}
-    ctx.log.debug("Request {}: {}".format(path, flow.request))
-    if not request_matches_config(flow.request, config):
-        return # no request handler for this path
+    path_handler = handlers.get(flow.request.path, handlers.get(path))
+    if path_handler is None:
+        return
+    config = handlers.get("*", {})
+    if isinstance(path_handler, list):
+        matched = None
+        for handler in path_handler:
+            handler_config = {**config, **handler}
+            if request_matches_config(flow.request, handler_config):
+                matched = handler_config
+                break
+        if matched is None:
+            return
+        config = matched
+    else:
+        config = {**config, **path_handler}
+        if not request_matches_config(flow.request, config):
+            return
     config.update(count_based_config(path, config))
     ctx.log.info("Match {}: {}".format(flow.request.path, config))
     modify = config.get("modify")
