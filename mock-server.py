@@ -35,7 +35,7 @@ def host_matches(host: str, allow) -> bool:
 
 def matches_value_or_list(value, allow) -> bool:
     """
-    Return whether iff `value` matches `allow`.
+    Return whether `value` matches `allow`.
 
     `allow` may either be of the same type as `value`, or a list of such items,
     in which case returns True if `value` matches any element of `allow`.
@@ -54,7 +54,6 @@ def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
 
     - `host` (some patterns supported, see `host_matches`)
     - `scheme` (exact match or list)
-    - `query` (exact match or list)
     """
     if not config:
         return False
@@ -65,10 +64,43 @@ def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
     required_scheme = config.get("scheme", mock_config.get("scheme"))
     if required_scheme and not matches_value_or_list(request.scheme, required_scheme):
         return False
-    required_query = config.get("query")
-    if required_query and not matches_value_or_list(request.query, required_query):
-        return False
     return True
+
+def response_matches_config(response: http.HTTPResponse, config: dict) -> bool:
+    """
+    Returns whether `response` is matched by `config`. This checks the following:
+
+    - `status` (the HTTP status code)
+    - `error` (boolean true/false
+    - `content`
+    """
+
+def count_based_config(path, config: dict) -> dict:
+    """
+    Return a configuration dict from `config["count"]` based on the number of
+    times `path` has been hit.
+
+    The configuration dictionary is formed from `config["count"]` keys applied
+    on top of one another in the following order:
+    - `*`: applied to every count
+    - `odd` or `even`: applied to alternating counts
+    - `1`, `2`, `3`, …: applied to exact counts, starting from 1
+
+    Note that the keys of `config["count"]` are strings, even for the numeric
+    counts, since the data is loaded from JSON.
+    """
+    result = {}
+    count_config = config.get("count")
+    if (not count_config) and ("once" in config):
+        count_config = { "1": config["once"] }
+    if count_config:
+        count = hit_count.get(path, 0) + 1
+        hit_count[path] = count
+        result.update(count_config.get("*", {}))
+        result.update(count_config.get("even" if (count % 2) == 0 else "odd", {}))
+        result.update(count_config.get(str(count), {}))
+        ctx.log.info("Count {} for {}: {}".format(count, path, result))
+    return result
 
 def encode_content(content) -> (bytes, str):
     """
@@ -128,7 +160,7 @@ def make_response(response, status = 200, content = {}, headers = {}) -> http.HT
     headers = {**headers, **{ "Content-Type": content_type }}
     headers.update(response.get("headers", {}))
     status = response.get("status", 200)
-    ctx.log.info("Response {}: headers={} content={}".format(status, headers, content))
+    ctx.log.debug("Response {}: headers={} content={}".format(status, headers, content))
     return http.HTTPResponse.wrap(
         net.http.Response.make(status, content, headers),
     )
@@ -156,28 +188,21 @@ def configure(updated) -> None:
 # server. Handling requests allows mocking data for endpoints not present
 # on remote, or modifying the outgoing request.
 def request(flow: http.HTTPFlow) -> None:
-    path = flow.request.path
+    path = flow.request.path.split("?")[0]
     handlers = mock_config.get("request", {})
     config = {**handlers.get("*", {}), **handlers.get(path, {})}
     ctx.log.debug("Request {}: {}".format(path, flow.request))
     if not request_matches_config(flow.request, config):
         return # no request handler for this path
-    ctx.log.debug("Match {}: {}".format(path, config))
-    oneshot = config.get("once")
-    if oneshot:
-        if path in seen_once:
-            ctx.log.debug("Already triggered once for {}: {}".format(path, flow.request))
-        else:
-            seen_once.add(path)
-            config = {**config, **oneshot}
-            ctx.log.info("Once for {}: {}".format(path, flow.request))
+    config.update(count_based_config(path, config))
+    ctx.log.info("Match {}: {}".format(flow.request.path, config))
     modify = config.get("modify")
     if modify:
         ctx.log.info("Modify: {} -> {}".format(flow.request, modify))
         flow.request.scheme = modify.get("scheme", flow.request.scheme)
         flow.request.host = modify.get("host", flow.request.host)
-        flow.request.path = modify.get("path", path)
-        flow.request.query = modify.get("query", flow.request.query)
+        flow.request.path = modify.get("path", flow.request.path)
+        flow.request.query = {**(flow.request.query or {}), **modify.get("query", {})}
         content = modify.get("content")
         if content:
             content, _ = encode_content(content)
@@ -193,14 +218,16 @@ def request(flow: http.HTTPFlow) -> None:
 # the same endpoint may return multiple types of responses and we may wish
 # to mock only some of them, or to mock them in different ways.
 def response(flow: http.HTTPFlow) -> None:
-    if flow.response.status_code == 200:
-        try:
-            content = flow.response.text
-            obj = json.loads(content)
-            obj["test"] = True
-            flow.response.content = json.dumps(obj).encode("utf-8")
-        except ValueError:
-            pass
+    path = flow.request.path.split("?")[0]
+    handlers = mock_config.get("response", {})
+    config = {**handlers.get("*", {}), **handlers.get(path, {})}
+    ctx.log.info("Response {}: {}".format(path, flow.request))
+    if not request_matches_config(flow.request, config):
+        return # the request did not match
+    if not response_matches_config(flow.response, config):
+        return # the response did not match
+    config.update(count_based_config(":" + path, config))
+    ctx.log.info("Match {}: {}".format(path, config))
 
 mock_config = {}
-seen_once = set()
+hit_count = {}

@@ -12,24 +12,50 @@
       }
     },
     "/once":{
-      "response": {
-        "content": "<body><h1>Twice</h1><p>You have reloaded the page.</p></body>",
-        "status": 418
-      },
       "once":{
-        "response": {
-          "content": "<body><h1>Once</h1><p>Reload and this will be gone.</p></body>"
+        "response":{
+          "status": 200,
+          "content": "<body><h1>Once</h1><p>Reload and this page will be gone.</p></body>"
+        }
+      },
+      "response":{
+        "status": 404,
+        "content": ""
+      }
+    },
+    "/count":{
+      "count":{
+        "1": {
+          "response": {
+            "content": "<body><h1>1</h1><p>You have loaded this page once.</p></body>",
+            "status": 418
+          }
+        },
+        "2": {
+          "response": "<body><h1>2</h1><p>You have loaded this page two times.</p></body>"
+        },
+        "6": {
+          "response": "<body><h1>6</h1><p>You have loaded this page six times.</p></body>"  
+        },
+        "even": {
+          "response": "<body><h1>Even</h1><p>You have loaded this page an even number of times.</p></body>"
+        },
+        "*": {
+          "response": "<body><h1>Odd</h1><p>You have loaded this page an odd number of times.</p></body>"          
         }
       }
     },
-    "/root":{
+    "/google":{
       "modify":{
-        "path":"/"              
+        "scheme": "https",
+        "host": "www.google.com",
+        "path": "/",
+        "query":{ "q": "mitmproxy" }
       }
     },
     "*":{
       "host":[
-        "arkku.com",
+        ".com",
         "arkku.dev"
       ]
     }
@@ -37,10 +63,8 @@
   "response":{
     "/v1/pages/front":[
       {
-        "match": {
-          "status": 200,
-          "content":[ ".", "sections", "[any]", ".", "template", "=", "out_of_reach" ]
-        },
+        "status": 200,
+        "content":[ ".", "sections", "[any]", ".", "template", "=", "out_of_reach" ],
         "modify": {
           "content":[
             { "merge": "./out_of_reach.json" }
