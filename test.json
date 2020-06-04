@@ -52,25 +52,43 @@
         "query":{ "q": "mitmproxy" }
       }
     },
-    "/multi":[
+    "/foo":[
       {
         "query": { "q": "foo" },
-        "response": "<body><h1>Foo</h1></body>"
+        "response": "<body><h1>FOO</h1></body>"
       },
       {
         "query": { "q": "bar" },
         "count":{
-          "id": "bar",
-          "2":{
-            "response": "<body><h1>Baz</h1></body>"
-          }
+          "id": "barbaz",
+          "even":{ "response": "<body><h1>Baz</h1></body>" }
         },
         "response": "<body><h1>Bar</h1></body>"
       },
       {
+        "query": { "q": "baz" },
+        "count":{
+          "id": "barbaz",
+          "even":{ "response": "<body><h1>Baz</h1></body>" }
+        },
+        "response": "<body><h1>Bar</h1></body>"
+      },
+      {
+        "count":{
+          "id": "foobar",
+          "1":{ "response": "<body><h1>Foo</h1></body>" },
+          "2":{ "response": "<body><h1>Bar</h1></body>" },
+          "3":{ "response": "<body><h1>Baz</h1></body>" }
+        },
         "response": "<body><h1>Foobar</h1></body>"
       }
     ],
+    "/flip":{
+      "random":[
+        { "response": "<body><h1>Heads</h1></body>" },
+        { "response": "<body><h1>Tails</h1></body>" }
+      ]
+    },
     "*":{
       "host":[
         ".com",

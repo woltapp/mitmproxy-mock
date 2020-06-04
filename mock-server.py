@@ -1,4 +1,5 @@
 import json
+import random
 import re
 from mitmproxy import http
 from mitmproxy import ctx
@@ -219,6 +220,9 @@ def request(flow: http.HTTPFlow) -> None:
         if not request_matches_config(flow.request, config):
             return
     config.update(count_based_config(path, config))
+    random_configs = config.get("random")
+    if random_configs:
+        config.update(random.choice(random_configs))
     ctx.log.info("Match {}: {}".format(flow.request.path, config))
     modify = config.get("modify")
     if modify:
