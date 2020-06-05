@@ -1,0 +1,11 @@
+{
+  "request":{
+    "/coffee":{ },
+    "~":{
+      "response":{
+        "status": 418,
+        "content": "<h1>418 – I'm a teapot</h1>"
+      }
+    }
+  }
+}

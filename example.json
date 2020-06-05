@@ -8,8 +8,21 @@
     },
     "/file":{
       "response":{
-          "content": "./test.json"
+        "content": "./example.json"
       }
+    },
+    "/object":{
+      "response":{
+        "content": {
+          "embedded":{
+            "json": [ "object "]
+          }
+        }
+      }
+    },
+    "/pass":{
+      "pass": true,
+      "response": "<blink>This text won't be seen, pass forwards to server</blink>"
     },
     "/once":{
       "once":{
@@ -88,10 +101,6 @@
         { "response": "<body><h1>Tails</h1></body>" }
       ]
     },
-    "/pass":{
-      "response": "<blink>This is never actually sent due to pass</blink>",
-      "pass": true
-    },
     "/unreliable":{
       "random":[
         { "pass": true }, { "pass": true }, { "pass": true },
@@ -120,11 +129,11 @@
     }
   },
   "response":{
-    "/test.json":{
+    "/nonexistent":{
       "status": 404,
       "replace":{
         "status": 200,
-        "content": "./test.json",
+        "content": "./example.json",
         "type": "application/json"
       }
     },
@@ -170,6 +179,11 @@
           "replace":{
             "other_array": [ {"id": "only_element_after_replace"} ]
           }
+        },
+        {
+          "merge":{
+            "added_from_file": "./example.json"
+          }
         }
       ]
     },
@@ -177,11 +191,11 @@
       "pass": true
     },
     "~":{
-        "status": 404,
-        "replace":{
-          "content": "<body><h1>404 - Not Found</h1><p>Custom error.</p></body>"
-        }
-      },
+      "status": 404,
+      "replace":{
+        "content": "<body><h1>404 - Not Found</h1><p>Custom error.</p></body>"
+      }
+    },
     "*":{
       "host":[
         ".com"

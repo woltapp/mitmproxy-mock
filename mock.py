@@ -2,15 +2,16 @@
 # mock-server.py: A mitmproxy script for mocking server responses.
 # The mock configuration is loaded from a JSON file, e.g.:
 #
-#   mitmdump -s mock-server.py --set mock=test.json -m reverse:https://foo.com/
+#   mitmdump -s mock-server.py --set mock=example.json -m reverse:https://foo.com/
 #
-# Documentation is a work in progress, see test.json for examples or ask
+# Documentation is a work in progress, see example.json for examples or ask
 # the author (Kimmo Kulovesi) for now.
 #
 
 import json
 import random
 import re
+from collections import OrderedDict
 from typing import Optional
 from mitmproxy import http
 from mitmproxy import ctx
@@ -71,6 +72,7 @@ def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
 
     - `host` (some patterns supported, see `host_matches`)
     - `scheme` (exact match or list)
+    - `path` (exact match or list, normally matched already before coming here)
     - `query` (keys are exact, values either exact or list)
     """
     if not config:
@@ -81,6 +83,9 @@ def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
         return False
     required_scheme = config.get("scheme", mock_config.get("scheme"))
     if required_scheme and not matches_value_or_list(request.scheme, required_scheme):
+        return False
+    required_path = config.get("path")
+    if required_path and not matches_value_or_list(request.path, required_path):
         return False
     required_query = config.get("query")
     if required_query:
@@ -104,7 +109,9 @@ def is_subset(subset, superset) -> bool:
         elif isinstance(subset, list):
             return all(any(is_subset(subitem, superitem) for superitem in superset) for subitem in subset)
         elif isinstance(subset, str):
-            if subset.startswith("~"):
+            if subset == "~":
+                return True
+            elif subset.startswith("~"):
                 allow_re = re.compile(subset[1:], re.M | re.X | re.S)
                 return bool(allow_re.search(str(superset)))
             else:
@@ -167,14 +174,16 @@ def merge_content(merge, content):
     """
     Merges `merge` into `content` recursively for dictionaries and lists.
     """
+    if isinstance(merge, str) and (merge.startswith(".") and (merge.endswith(".json") or merge.endswith(".js"))):
+        try:
+            with open(merge) as merge_file:
+                merge = json.load(merge_file)
+        except:
+            pass
     if isinstance(merge, dict):
         if isinstance(content, dict):
             for key in merge:
-                value, content_value = merge[key], content.get(key)
-                if content_value:
-                    content[key] = merge_content(value, content_value)
-                else:
-                    content[key] = value
+                content[key] = merge_content(merge[key], content.get(key))
         elif isinstance(content, list) and ("where" in merge):
             where = merge["where"]
             for index, element in enumerate(content):
@@ -182,12 +191,14 @@ def merge_content(merge, content):
                     if "merge" in merge:
                         content[index] = merge_content(merge["merge"], element)
                     elif "replace" in merge:
-                        content[index] = merge["replace"]
+                        content[index] = merge_content(merge["replace"], None)
         else:
             content = merge
     elif isinstance(merge, list):
         if isinstance(content, list):
             content = content + merge
+        elif content is None:
+            content = merge
         else:
             content = [ content ] + merge
     else:
@@ -287,9 +298,9 @@ def encode_content(content) -> (bytes, str):
         except FileNotFoundError:
             if content.startswith("<"):
                 content_type = "text/html"
-            return content.encode("utf-8"), content_type
+            return content.encode("utf-8"), content_type + "; charset=utf-8"
     else:
-        return json.dumps(content).encode("utf-8"), content_type
+        return json.dumps(content).encode("utf-8"), content_type + "; charset=utf-8"
 
 def make_response(response, status, content, headers) -> http.HTTPResponse:
     """
@@ -310,8 +321,8 @@ def make_response(response, status, content, headers) -> http.HTTPResponse:
         response = { "content": response }
     content, content_type = encode_content(response.get("content", content))
     content_type = response.get("type", headers.get("Content-Type", content_type))
-    charset = response.get("charset", mock_config.get("charset"))
-    if charset and not "charset" in content_type:
+    charset = response.get("charset", mock_config.get("charset", "utf-8"))
+    if charset and not ((";" in content_type) or ("image" in content_type)):
         content_type = "{}; charset={}".format(content_type, charset)
     headers = {**headers, **{ "Content-Type": content_type }}
     headers.update(response.get("headers", {}))
@@ -325,39 +336,40 @@ def make_response(response, status, content, headers) -> http.HTTPResponse:
 def load(script) -> None:
     script.add_option("mock", str, "mock.json", "Mock configuration JSON file")
 
+def extract_regex_paths(config: OrderedDict) -> OrderedDict:
+    re_paths = OrderedDict()
+    if config:
+        for path, handler in config.items():
+            if not path.startswith("~"):
+                continue
+            try:
+                path_re = re.compile(path[1:], re.X)
+                re_paths[path_re] = json.loads(json.dumps(handler))
+            except Exception as error:
+                ctx.log.error("Error: regex path {}: {}".format(path, error))
+    return re_paths
+
 # Called to configure the script
 def configure(updated) -> None:
+    global mock_config, re_request, re_response
+    global hit_count, cycle_index
     if "mock" in updated:
         mock_filename = ctx.options.mock
         with open(mock_filename) as mock_config_file:
             try:
-                mock_config.clear()
-                new_config = json.load(mock_config_file)
-                mock_config.update(new_config)
+                # OrderedDict hack to preserve path regex order
+                ordered_config = json.load(mock_config_file, object_pairs_hook=OrderedDict)
+                mock_config = json.loads(json.dumps(ordered_config))
+                hit_count.clear()
+                cycle_index.clear()
+                re_request = extract_regex_paths(ordered_config.get("request"))
+                re_response = extract_regex_paths(ordered_config.get("response"))
                 ctx.log.info("Mock configuration: {}".format(mock_filename))
             except Exception as error:
                 ctx.log.error("Error: {}: {}".format(mock_filename, error))
         if not mock_config:
             ctx.log.error("No configuration: use --set config.json")
             return
-        hit_count.clear()
-        cycle_index.clear()
-        re_request.clear()
-        re_response.clear()
-        for path in new_config.get("request", {}):
-            if path.startswith("~"):
-                try:
-                    path_re = re.compile(path[1:], re.X)
-                    re_request[path_re] = mock_config["request"][path]
-                except Exception as error:
-                    ctx.log.error("Error: {}: invalid request regex: {}".format(path, error))
-        for path in new_config.get("response", {}):
-            if path.startswith("~"):
-                try:
-                    path_re = re.compile(path[1:], re.X)
-                    re_response[path_re] = mock_config["response"][path]
-                except Exception as error:
-                    ctx.log.error("Error: {}: invalid response regex: {}".format(path, error))
 
 def resolve_config(flow: http.HTTPFlow, event: str) -> Optional[dict]:
     """
@@ -368,8 +380,10 @@ def resolve_config(flow: http.HTTPFlow, event: str) -> Optional[dict]:
     is_request = (event == "request")
     path = flow.request.path.split("?")[0]
     handlers = mock_config.get(event, {})
+    # TODO: Allow global configs to be merged deeper (e.g., global modify)
     path_handler = handlers.get(flow.request.path, handlers.get(path))
     if path_handler is None:
+        # TODO: Define order for regexes
         # Iterate over the regexes if there is no direct match
         re_handlers = (re_request if is_request else re_response)
         for path_re in re_handlers:
@@ -403,6 +417,7 @@ def resolve_config(flow: http.HTTPFlow, event: str) -> Optional[dict]:
             config = {**config, **path_handler}
         if not (request_matches_config(flow.request, config) and (is_request or response_matches_config(flow.response, config))):
             return None
+    # TODO: Allow recursion to arbitrary depth
     config.update(count_based_config(path, config))
     random_configs = config.get("random")
     if random_configs:
@@ -428,6 +443,7 @@ def request(flow: http.HTTPFlow) -> None:
     ctx.log.debug("Match request: {}".format(flow.request.path))
     modify = config.get("modify")
     if modify:
+        # TODO: Allow regex replacement for modify
         ctx.log.info("Modify request: {} -> {}".format(flow.request, modify))
         flow.request.scheme = modify.get("scheme", flow.request.scheme)
         flow.request.host = modify.get("host", flow.request.host)
@@ -517,10 +533,10 @@ def response(flow: http.HTTPFlow) -> None:
 mock_config = {}
 
 # Regex paths for requests.
-re_request = {}
+re_request = OrderedDict()
 
 # Regex paths for responses.
-re_response = {}
+re_response = OrderedDict()
 
 # Hit counters (for `count` and `once`).
 hit_count = {}
