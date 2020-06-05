@@ -475,7 +475,7 @@ def request(flow: http.HTTPFlow) -> None:
             content, _ = encode_content(content)
             flow.request.content = content
         flow.request.headers.update(modify.get("headers", {}))
-    response = config.get("response")
+    response = config.get("respond")
     if response:
         flow.response = make_response(response, 200, "", {})
         ctx.log.debug("Mock {}".format(flow.request.path))

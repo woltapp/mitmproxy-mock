@@ -1,18 +1,18 @@
 {
   "request":{
     "/test":{
-      "response":{
+      "respond":{
         "type": "text/html",
         "content": "<body><h1>TEST</h1></body>"
       }
     },
     "/file":{
-      "response":{
+      "respond":{
         "content": "./example.json"
       }
     },
     "/object":{
-      "response":{
+      "respond":{
         "content": {
           "embedded":{
             "json": [ "object "]
@@ -22,11 +22,11 @@
     },
     "/pass":{
       "pass": true,
-      "response": "<blink>This text won't be seen, pass forwards to server</blink>"
+      "respond": "<blink>This text won't be seen, pass forwards to server</blink>"
     },
     "/once":{
       "once":{
-        "response":{
+        "respond":{
           "status": 200,
           "content": "<body><h1>Once</h1><p>Reload and this page will be gone.</p></body>"
         }
@@ -34,40 +34,40 @@
     },
     "/cycle":{
       "cycle":[
-        { "response": "<body><h1>A</h1></body>" },
-        { "response": "<body><h1>B</h1></body>" },
-        { "response": "<body><h1>C</h1></body>" }
+        { "respond": "<body><h1>A</h1></body>" },
+        { "respond": "<body><h1>B</h1></body>" },
+        { "respond": "<body><h1>C</h1></body>" }
       ]
     },
     "/count":{
       "count":{
         "1": {
-          "response": {
+          "respond": {
             "content": "<body><h1>1</h1><p>You have loaded this page once.</p></body>",
             "status": 418
           },
           "cycle": {}
         },
         "2": {
-          "response": "<body><h1>2</h1><p>You have loaded this page two times.</p></body>",
+          "respond": "<body><h1>2</h1><p>You have loaded this page two times.</p></body>",
           "cycle": {}
         },
         "6": {
-          "response": "<body><h1>6</h1><p>You have loaded this page six times.</p></body>",
+          "respond": "<body><h1>6</h1><p>You have loaded this page six times.</p></body>",
           "cycle": {}
         },
         "even": {
           "cycle-id": "even_count",
           "cycle":[
-            { "response": "<body><h1>Even</h1><p>You have loaded this page an even number of times.</p></body>" },
-            { "response": "<body><h1>even</h1><p>You have loaded this page an even number of times.</p></body>" }
+            { "respond": "<body><h1>Even</h1><p>You have loaded this page an even number of times.</p></body>" },
+            { "respond": "<body><h1>even</h1><p>You have loaded this page an even number of times.</p></body>" }
           ]
         },
         "odd":{
           "cycle-id": "odd_count",
           "cycle":[
-            { "response": "<body><h1>Odd</h1><p>You have loaded this page an odd number of times.</p></body>" },
-            { "response": "<body><h1>odd</h1><p>You have loaded this page an odd number of times.</p></body>" }
+            { "respond": "<body><h1>Odd</h1><p>You have loaded this page an odd number of times.</p></body>" },
+            { "respond": "<body><h1>odd</h1><p>You have loaded this page an odd number of times.</p></body>" }
           ]
         }
       }
@@ -75,36 +75,36 @@
     "/foo":[
       {
         "query": { "q": "foo" },
-        "response": "<body><h1>FOO</h1></body>"
+        "respond": "<body><h1>FOO</h1></body>"
       },
       {
         "query": { "q": "~ba[rz]" },
         "count":{
           "id": "barbaz",
-          "even":{ "response": "<body><h1>Baz</h1></body>" },
-          "odd":{ "response": "<body><h1>Bar</h1></body>" }
+          "even":{ "respond": "<body><h1>Baz</h1></body>" },
+          "odd":{ "respond": "<body><h1>Bar</h1></body>" }
         }
       },
       {
         "count":{
           "id": "foobar",
-          "1":{ "response": "<body><h1>Foo</h1></body>" },
-          "2":{ "response": "<body><h1>Bar</h1></body>" },
-          "3":{ "response": "<body><h1>Baz</h1></body>" },
-          "*":{ "response": "<body><h1>Foobar</h1></body>" }
+          "1":{ "respond": "<body><h1>Foo</h1></body>" },
+          "2":{ "respond": "<body><h1>Bar</h1></body>" },
+          "3":{ "respond": "<body><h1>Baz</h1></body>" },
+          "*":{ "respond": "<body><h1>Foobar</h1></body>" }
         }
       }
     ],
     "/flip":{
       "random":[
-        { "response": "<body><h1>Heads</h1></body>" },
-        { "response": "<body><h1>Tails</h1></body>" }
+        { "respond": "<body><h1>Heads</h1></body>" },
+        { "respond": "<body><h1>Tails</h1></body>" }
       ]
     },
     "/unreliable":{
       "random":[
         { "pass": true }, { "pass": true }, { "pass": true },
-        { "response": {
+        { "respond": {
             "status": 500,
             "content": "<h1>500 - Random Error</h1>"
           }
@@ -119,7 +119,7 @@
       }
     },
     "~^/ba(|.)$":{
-      "response": "<body><h1>Ba</h1></body>"
+      "respond": "<body><h1>Ba</h1></body>"
     },
     "*":{
       "host":[

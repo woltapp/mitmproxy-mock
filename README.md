@@ -116,7 +116,7 @@ respectively, e.g.:
 {
     "request":{
         "/file":{
-            "response":{
+            "respond":{
                 "content": "./example.json"
             }
         },
@@ -170,9 +170,7 @@ actions, only the first match is used.
 A path handler dictionary may contain a mix of keys for further matching
 (e.g., `host` matches that path only a specific set of hosts) and for
 actions to take (e.g., `pass` will pass the request without further
-action). The key `response` on a _request_ handler will cause the
-specified response to be sent, whereas `response` on a _response_ handler
-will is a matching requirement for the response received.
+action).
 
 #### Wildcard Path Handlers
 
@@ -182,12 +180,12 @@ paths might exist on multiple servers. The `*` is not considered a match
 by itself, i.e., if it is the only match, the path is not handled at all.
 For example, the following would return the status 418 only for the path
 `/foo` (which would get it from the `*` since it is not overridden by
-`response` in `/foo`):
+`respond` in `/foo`):
 
 ``` json
 "request":{
     "/foo":{ },
-    "*":{ "response": { "status": 418 } }
+    "*":{ "respond": { "status": 418 } }
 }
 ```
 
@@ -200,7 +198,7 @@ evaluated for that path:
 ``` json
 "request":{
     "/foo":{ },
-    "~":{ "response":{ "status": 418 } }
+    "~":{ "respond":{ "status": 418 } }
 }
 ```
 
@@ -362,7 +360,7 @@ error code with a one in four probability:
   "random":[
     { "pass": true }, { "pass": true }, { "pass": true },
     {
-      "response": {
+      "respond": {
         "status": 500,
         "content": "<h1>500 - Random Error</h1>"
       }
@@ -388,14 +386,13 @@ The following actions are available in both response and request handlers:
 
 The following actions are available only in request handlers:
 
-* `response` – sends the specified response (`status`, `content`, `type`,
-  `headers`) instead of requesting it from the remote server (note that
-  `response` in _response_ handler is a matching criteria, not an action)
+* `respond` – respond with the specified response (`status`, `content`, `type`,
+  `headers`) instead of requesting it from the remote server
 
 The following actions are available only in response handlers:
 
 * `replace` – replaces the response with the contents of the replace
-  dictionary (similar to the `response` dictionary of request handlers)
+  dictionary (similar to the `respond` dictionary of request handlers)
 * `modify` – a modifier dictionary, or an array thereof, applied
   in order (see below)
 
@@ -405,7 +402,7 @@ Request handlers can be used to mock responses without ever going through
 the remote server. This allows simulating events and endpoints that do
 do not exist or would be hard to reproduce on backend.
 
-The `response` key on a request handler causes a response to be sent, and
+The `respond` key on a request handler causes a response to be sent, and
 likewise the `replace` key on a response handler causes the original
 response to be replaced with the specified one.
 
@@ -420,7 +417,7 @@ The keys for constructing a response are:
   and files with the extension `.json`)
 * `headers` – a dictionary of headers
 
-If the `response` or `replace` is in itself a string, that string is
+If the `respond` or `replace` is in itself a string, that string is
 interpreted as though it were the value of `content` inside a dictionary.
 
 Examples of request handlers:
@@ -429,18 +426,18 @@ Examples of request handlers:
 {
   "request":{
     "/string":{
-      "response":{
+      "respond":{
         "type": "text/html",
         "content": "<body><h1>HTML</h1></body>"
       }
     },
     "/file":{
-      "response":{
+      "respond":{
         "content": "./example.json"
       }
     },
     "/object":{
-      "response":{
+      "respond":{
         "content": {
           "embedded":{
             "json": [ "object "]
