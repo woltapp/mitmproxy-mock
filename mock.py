@@ -2,7 +2,7 @@
 # mock-server.py: A mitmproxy script for mocking server responses.
 # The mock configuration is loaded from a JSON file, e.g.:
 #
-#   mitmdump -s mock-server.py --set mock=example.json -m reverse:https://foo.com/
+#   mitmdump -s mock.py --set mock=example.json -m reverse:https://foo.com/
 #
 # Documentation is a work in progress, see example.json for examples or ask
 # the author (Kimmo Kulovesi) for now.
@@ -75,6 +75,8 @@ def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
     - `path` (exact match or list, normally matched already before coming here)
     - `query` (keys are exact, values either exact or list)
     """
+    # TODO: Implement request header matching
+    # TODO: Implement request content matching
     if not config:
         return False
     host = request.host
@@ -157,16 +159,21 @@ def response_matches_config(response: http.HTTPResponse, config: dict) -> bool:
     Returns whether `response` is matched by `config`. This checks the following:
 
     - `status` (the HTTP status code)
+    - `error` (true iff the HTTP status >= 400)
     - `content` (a string or a list of strings where _all_ must match)
 
     For content matching, each string can either be a regular expression denoted
     by a tilde prefix (`~`), otherwise a substring that must be found exactly.
     """
+    # TODO: Implement response header matching
     required_status = config.get("status")
     if required_status and not matches_value_or_list(response.status_code, required_status):
         return False
     required_content = config.get("content")
     if required_content and not content_matches(response.text, required_content):
+        return False
+    required_error_state = config.get("error")
+    if isinstance(required_error_state, bool) and required_error_state != (response.status_code >= 400):
         return False
     return True
 
@@ -332,11 +339,15 @@ def make_response(response, status, content, headers) -> http.HTTPResponse:
         net.http.Response.make(status, content, headers),
     )
 
-# Called when the script is loaded, registers command-line options.
-def load(script) -> None:
-    script.add_option("mock", str, "mock.json", "Mock configuration JSON file")
-
 def extract_regex_paths(config: OrderedDict) -> OrderedDict:
+    """
+    Returns an `OrderedDict` of compiled regex paths from `config`.
+
+    A regex path in `config` is a string with a tilde prefix (`~`),
+    where the rest of the string is a regular expression. Those
+    paths are taken in order, compiled, an added to the resulting
+    ordered dictionary in the same order.
+    """
     re_paths = OrderedDict()
     if config:
         for path, handler in config.items():
@@ -348,6 +359,10 @@ def extract_regex_paths(config: OrderedDict) -> OrderedDict:
             except Exception as error:
                 ctx.log.error("Error: regex path {}: {}".format(path, error))
     return re_paths
+
+# Called when the script is loaded, registers command-line options.
+def load(script) -> None:
+    script.add_option("mock", str, "mock.json", "Mock configuration JSON file")
 
 # Called to configure the script
 def configure(updated) -> None:
@@ -380,10 +395,8 @@ def resolve_config(flow: http.HTTPFlow, event: str) -> Optional[dict]:
     is_request = (event == "request")
     path = flow.request.path.split("?")[0]
     handlers = mock_config.get(event, {})
-    # TODO: Allow global configs to be merged deeper (e.g., global modify)
     path_handler = handlers.get(flow.request.path, handlers.get(path))
     if path_handler is None:
-        # TODO: Define order for regexes
         # Iterate over the regexes if there is no direct match
         re_handlers = (re_request if is_request else re_response)
         for path_re in re_handlers:
@@ -417,19 +430,27 @@ def resolve_config(flow: http.HTTPFlow, event: str) -> Optional[dict]:
             config = {**config, **path_handler}
         if not (request_matches_config(flow.request, config) and (is_request or response_matches_config(flow.response, config))):
             return None
-    # TODO: Allow recursion to arbitrary depth
+    # TODO: Allow recursive cycle/random/count
     config.update(count_based_config(path, config))
-    random_configs = config.get("random")
-    if random_configs:
-        config.update(random.choice(random_configs))
     cycle = config.get("cycle", config.get("round"))
     if cycle:
         cycle_id = config.get("cycle-id", path)
         index = cycle_index.get(cycle_id, 0)
         cycle_index[cycle_id] = ((index + 1) % len(cycle))
         config.update(cycle[index])
+    random_configs = config.get("random")
+    if random_configs:
+        config.update(random.choice(random_configs))
     if config.get("pass", False):
         return None
+    msg = config.get("log")
+    if msg:
+        if msg is True:
+            msg = "Log"
+        if is_request:
+            ctx.log.info("{}: {}: {}".format(msg, event, flow.request))
+        else:
+            ctx.log.info("{}: {}: {} -> {}".format(msg, event, flow.request, flow.response))
     return config
 
 # Called for every incoming request, before passing anything to the remote
@@ -444,7 +465,7 @@ def request(flow: http.HTTPFlow) -> None:
     modify = config.get("modify")
     if modify:
         # TODO: Allow regex replacement for modify
-        ctx.log.info("Modify request: {} -> {}".format(flow.request, modify))
+        ctx.log.debug("Modify request: {} -> {}".format(flow.request, modify))
         flow.request.scheme = modify.get("scheme", flow.request.scheme)
         flow.request.host = modify.get("host", flow.request.host)
         flow.request.path = modify.get("path", flow.request.path)
@@ -457,7 +478,7 @@ def request(flow: http.HTTPFlow) -> None:
     response = config.get("response")
     if response:
         flow.response = make_response(response, 200, "", {})
-        ctx.log.info("Mock {}".format(flow.request.path))
+        ctx.log.debug("Mock {}".format(flow.request.path))
 
 # Called before returning a response from the remote server. This can be
 # used to rewrite responses based on their original contents. For example,
@@ -474,7 +495,7 @@ def response(flow: http.HTTPFlow) -> None:
         response = replace.get("response", replace)
         if response:
             flow.response = make_response(response, flow.response.status_code, flow.response.content, flow.response.headers)
-            ctx.log.info("Replace response {}: {}".format(flow.request.path, flow.response))
+            ctx.log.debug("Replace response {}: {}".format(flow.request.path, flow.response))
     modify = config.get("modify", [])
     if isinstance(modify, dict) or isinstance(modify, str):
         modify = [ modify ]
@@ -499,13 +520,11 @@ def response(flow: http.HTTPFlow) -> None:
                 if isinstance(replace, str):
                     try:
                         with open(replace) as replace_file:
-                            replace = json.load(merge_file)
+                            replace = json.load(replace_file)
                     except FileNotFoundError:
                         pass
                 if isinstance(replace, dict):
                     content.update(replace)
-                elif isinstance(content, list) and isinstance(replace, list):
-                    content = replace
                 else:
                     if isinstance(replace, str):
                         replace = replace[1:].split(replace[0])
@@ -527,7 +546,7 @@ def response(flow: http.HTTPFlow) -> None:
             sub_re, replacement = re.compile(modification[0], re.X), modification[1]
             flow.response.text = sub_re.sub(replacement, flow.response.text)
     if modify:
-        ctx.log.info("Modify response {}: {}".format(flow.request.path, modify))
+        ctx.log.debug("Modify response {}: {}".format(flow.request.path, modify))
 
 # The global configuration.
 mock_config = {}

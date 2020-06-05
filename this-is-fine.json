@@ -1,0 +1,13 @@
+{
+  "response":{
+    "~":{
+      "error": true,
+      "replace":{
+        "status": 200,
+        "type": "application/json",
+        "content": {}
+      },
+      "log": "This is fine"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "request":{
+    "~":{
+      "random":[
+        { "pass": true }, { "pass": true }, { "pass": true },
+        {
+          "response": {
+            "status": 500,
+            "content": "<h1>500 - Random Error</h1>"
+          }
+        }
+      ]
+    }
+  }
+}

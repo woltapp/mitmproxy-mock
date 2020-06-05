@@ -1,7 +1,8 @@
 # MITMProxy Mock
 
 This repository contains scripts for using [mitmproxy](https://mitmproxy.org)
-to insert mock responses for http requests for the purposes of app development.
+to insert mock responses for http requests for the purposes of app
+development.
 
 MITM stands for man-in-the-middle, i.e., the tool goes in between the client
 and server, and can caputer, replace, and/or modify requests and responses
@@ -52,6 +53,9 @@ while connected through `mitmproxy` and install the certificate from there.
 
 ## Running
 
+You can run `mitmproxy` as the interactive console, or `mitmdump` that
+just executes the script and logs things to the terminal.
+
 ### Reverse Proxy Mode
 
 Reverse proxy mode means that the client connects to the address of the
@@ -89,7 +93,7 @@ Mitmproxy.
 The transparent proxy mode is run as follows:
 
 ``` sh
-mitmdump -s mock-server.py --set mock=config.json -m transparent
+mitmdump -s mock.py --set mock=config.json -m transparent
 ```
 
 As with reverse proxy mode, `config.json` is your configuration file. There
@@ -140,8 +144,8 @@ respectively, e.g.:
 
 ### Path Handlers
 
-Both `request` and `response` dictionaries have paths as keys. The path keys
-can be any mix of the following types:
+Both `request` and `response` dictionaries have paths as keys. The path
+_keys_ can be any mix of the following types:
 
 * exact string match without query or fragments, e.g. `/`, `/foo/bar`
 * a regular expression match denoted by a tilde prefix `~` (which not part
@@ -151,14 +155,34 @@ can be any mix of the following types:
   for that section (i.e., its contents are added to the any other handler
   unless explicitly overridden therein)
 
-The typical use of `*` is to globally specify the host or hosts to be
-matched, in case of transparent proxy mode where the same paths might
-exist on other servers. The `*` is not considered a match by itself, i.e.,
-if it is the only match, the path is not handled at all. The match-all
-regular expression `~` can be used to force all requests or responses to
-be processed. For example, the following would return the status 418 only
-for the path `/foo` (which would get it from the `*` since it is not
-overridden by `response` in `/foo`):
+The path handler _values_ are either:
+
+* a dictionary containing matching and action clauses, or
+* an array of such dictionaries
+
+In case the path handler is an array, its elements are evaluated in order
+until the first match for the request or response is found. In particular,
+note that even if there are multiple matching handlers with different
+actions, only the first match is used.
+
+#### Path Handler Definition
+
+A path handler dictionary may contain a mix of keys for further matching
+(e.g., `host` matches that path only a specific set of hosts) and for
+actions to take (e.g., `pass` will pass the request without further
+action). The key `response` on a _request_ handler will cause the
+specified response to be sent, whereas `response` on a _response_ handler
+will is a matching requirement for the response received.
+
+#### Wildcard Path Handlers
+
+The typical use of the `*` path handler is to globally specify the host
+or hosts to be matched, such as in transparent proxy mode where the same
+paths might exist on multiple servers. The `*` is not considered a match
+by itself, i.e., if it is the only match, the path is not handled at all.
+For example, the following would return the status 418 only for the path
+`/foo` (which would get it from the `*` since it is not overridden by
+`response` in `/foo`):
 
 ``` json
 "request":{
@@ -167,9 +191,11 @@ overridden by `response` in `/foo`):
 }
 ```
 
-Whereas the following would return the status 418 for all paths _except_
-`/foo` which, as an exact match, prevents regular expression paths
-(including `~`) from being evaluated for that path:
+However, the match-all regular expression `~` can be used to force all
+otherwise unmatched requests or responses to be processed. The following
+would return the status 418 for all paths _except_ `/foo` which, as an
+exact match, prevents regular expression paths (including `~`) from being
+evaluated for that path:
 
 ``` json
 "request":{
@@ -214,13 +240,15 @@ for matching:
 
 * `scheme` (e.g., `https`)
 * `host` (e.g., `api.server.com`)
-* `path` (e.g., `/v1/pages/front`, done on full path including args and fragments)
+* `path` (e.g., `/v1/pages/front`, done on full path including query
+  and fragments)
 * `query` (e.g., `{ "q": "query" }`)
 
 For response handlers, the following additional keys are available:
 
 * `status` (the HTTP status code, e.g., 200)
 * `content` (the content sent by the server)
+* `error` (true/false according to the status code, 400+ is an error)
 
 Matching may be done either as single value or an array of such values. In
 case of an array, it suffices that any element matches, for example the
@@ -228,7 +256,7 @@ following matches any of the three hostnames:
 
 ``` json
 "*":{
-    "host":[ 
+    "host":[
         "api.server.com",
         "beta.server.com",
         "api.staging.com"
@@ -284,7 +312,8 @@ for existence regardless of its value.
 
 Paths as keys to `request` and `response` can also be regular expressions.
 If there is no exact match for a given path, then the regular expression
-paths of that section (`request` or `response`) will be evaluated in the order they appear in the JSON file. Beware that not all tools will preserve
+paths of that section (`request` or `response`) will be evaluated in the
+order they appear in the JSON file. Beware that not all tools will preserve
 the order of JSON dictionary keys, so the JSON file should be edited
 manually if the order of evaluation matters.
 
@@ -300,5 +329,239 @@ path, and test the path again inside each element:
     {
         "path": "~^/v1/"
     }
+]
+```
+
+### Stateful Handlers
+
+A number of "stateful" path handlers are available:
+
+* `once` – the contents are evaluated only once for that path
+* `count` – a dictionary of handlers with specific counts as strings,
+  `even`, `odd`, and/or `*` as keys, whereby all matching handlers are
+  merged together such that the more specific ones take precedence
+  (the id for each count is normally the path, but the `count`
+  dictionary may contain an `id` key to override this)
+* `cycle` – an array of handlers that are cycled through in sequence,
+  wrapping around (the id for each cycle is normally the path, but
+  `cycle-id` can be specified alongside `cycle` in case there are
+  multiple alternate cycles for the same path, or the same cycle
+  is to be used with multiple paths)
+* `random` – an array of handlers from which one is chosen at random
+  each time it is evaluated
+
+These handlers allow simulating flows of responses on the same endpoint,
+e.g., a sequence of events, a one-time or randomly occurring error, etc.
+
+For example, the following request handler passes any request through to
+the remote server three out of for times at random, but produces a specific
+error code with a one in four probability:
+
+``` json
+"~":{
+  "random":[
+    { "pass": true }, { "pass": true }, { "pass": true },
+    {
+      "response": {
+        "status": 500,
+        "content": "<h1>500 - Random Error</h1>"
+      }
+    }
+  ]
+}
+```
+
+Currently these handlers can only be nested up to one level, and only
+in the order given (i.e., `cycle` can be inside `count`, and `random`
+can be inside `cycle` or `count`). In the future arbitrary nesting may
+be supported.
+
+See `example.json` for more examples of these.
+
+### Actions
+
+The following actions are available in both response and request handlers:
+
+* `pass` – skips any further actions and passes the request or response
+  through
+* `log` – logs the contents of the request or response
+
+The following actions are available only in request handlers:
+
+* `response` – sends the specified response (`status`, `content`, `type`,
+  `headers`) instead of requesting it from the remote server (note that
+  `response` in _response_ handler is a matching criteria, not an action)
+
+The following actions are available only in response handlers:
+
+* `replace` – replaces the response with the contents of the replace
+  dictionary (similar to the `response` dictionary of request handlers)
+* `modify` – a modifier dictionary, or an array thereof, applied
+  in order (see below)
+
+#### Mocking Responses
+
+Request handlers can be used to mock responses without ever going through
+the remote server. This allows simulating events and endpoints that do
+do not exist or would be hard to reproduce on backend.
+
+The `response` key on a request handler causes a response to be sent, and
+likewise the `replace` key on a response handler causes the original
+response to be replaced with the specified one.
+
+The keys for constructing a response are:
+
+* `status` – the HTTP status code (defaults to 200 for request handlers
+  and to the original code for response handlers)
+* `content` – the content either as raw string, JSON object, or a string
+  containing a local filename
+* `type` – a shortcut for the `Content-Type` header (in request handlers
+  often inferred automatically, e.g., `application/json` for JSON objects
+  and files with the extension `.json`)
+* `headers` – a dictionary of headers
+
+If the `response` or `replace` is in itself a string, that string is
+interpreted as though it were the value of `content` inside a dictionary.
+
+Examples of request handlers:
+
+``` json
+{
+  "request":{
+    "/string":{
+      "response":{
+        "type": "text/html",
+        "content": "<body><h1>HTML</h1></body>"
+      }
+    },
+    "/file":{
+      "response":{
+        "content": "./example.json"
+      }
+    },
+    "/object":{
+      "response":{
+        "content": {
+          "embedded":{
+            "json": [ "object "]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+#### Modifying Responses
+
+It is possible to modify the response from the remote server by
+using either a `replace` or `modify` key in a response handler.
+
+To **replace** a response entirely, specify the new response inside
+the `replace` dictionary.
+
+To **modify** content, the value of `modify` is either a dictionary
+or an array of such dictionaries, processed in order, with the
+following keys each:
+
+* `replace` – perform selective replacement of content (in contrast to
+  the aforementioned top level `replace` which replaces the entire
+  response)
+* `delete` – selectively delete content
+* `merge` – merge (add/insert/override) content
+
+##### Replace
+
+The `modify` `replace` can be of the following formats:
+
+* a string containing a local file name, in which case the file is
+  read as JSON, then processed as below
+* a dictionary: the response content is interpreted as a dictionary,
+  and merged with `replace` non-recursively such that any colliding
+  keys are taken from `replace`
+* a string of the format `/re/sub` where `/` is an arbitary separator
+  character, `re` is a regular expression, and `sub` is the substitute
+  used for every occurrence of `re` in the content _string_ (note that
+  this can break JSON format)
+* an array with two strings as elements: the first string is treated
+  as a regular expression, and all occurrences of it in the content
+  are substituted by the second string
+
+##### Delete
+
+The `modify` `delete` can be any nested JSON object. Any matching
+key, element, or value is deleted from content. The match need not be
+exact, i.e., as for content matching, it suffices to be a subset of
+`content`. The empty dictionary `{}` can be used to match any value,
+e.g., the following delete the key `foo` regardless of its value:
+
+``` json
+"delete":{
+    "foo": {}
+}
+```
+
+##### Merge
+
+The `modify` `merge` can be any nested JSON object. It is merged
+recursively with the content such that any new keys and values are
+inserted and any matching existing keys are replaced on the
+innermost level of nesting.
+
+If any dictionary value nested inside `merge` is a string beginning
+with a dot `.` and ending with `.json`, the corresponding file is
+loaded and substituted for the string before merging.
+
+As a special case, if an existing value in the content is an array
+of dictionaries, it is possible to target specific elements of the
+array by specifying a dictionary in the `merge` object in its place
+with a `where` dictionary. The value of `where` is a dictionary that
+is matched against elements of the array as for content matching.
+For every matching element, the `where` keys siblings `merge` or
+`replace` are used to merge or replace those dictionaries with the
+matching element, as per the usual `merge` and `replace` rules.
+
+For example:
+
+``` js
+"modify":[
+  "/foo/FOO", // string replacement
+  {
+    "merge":{
+      "new_key": "inserted_item",
+      "existing_key": "replaced_item",
+      "array":[ { "this": "added_element" } ]
+    }
+  },
+  {
+    "delete":{
+      "foo":{}, // delete key regardless of value
+      "array":[ { "id": 0 } ] // delete element with id 0
+    }
+  },
+  {
+    "merge":{
+      "array":{
+        // modify specific elements of an array
+        "where":{ "foo": true },
+        "merge":{ "foo": false, "replaced_foo": true }
+      }
+    }
+  },
+  {
+    "merge":{
+      // replace specific elements of an array
+      "array":{
+        "where":{ "id": 4 },
+        "replace":{ "id": 4, "replaced_element": true }
+      }
+    }
+  },
+  {
+    // replace an entire array
+    "replace":{
+      "other_array":[ {"id": 0, "only_element_in_new_array": true} ]
+    }
+  }
 ]
 ```
