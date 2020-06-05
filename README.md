@@ -5,7 +5,7 @@ to insert mock responses for http requests for the purposes of app
 development.
 
 MITM stands for man-in-the-middle, i.e., the tool goes in between the client
-and server, and can caputer, replace, and/or modify requests and responses
+and server, and can capture, replace, and/or modify requests and responses
 between them. This script is intended specifically to aid development of
 applications, e.g.:
 
@@ -17,7 +17,7 @@ contents (e.g., insert new data into an existing response)
 
 ## Installation
 
-Install Mitmproxy through `pip` or Homebrew:
+Install mitmproxy through `pip` or Homebrew:
 
 ``` sh
 pip3 install mitmproxy
@@ -87,8 +87,8 @@ Some clients may also require a specific certificate instead of any trusted
 certificate for that domain – this is known as certificate pinning – which
 you must somehow overcome. This tool is meant for development, so it is
 assumed here that as the developer you are either able to disable
-certificate pinning of your own app, or whitelist the certificate used by
-Mitmproxy.
+certificate pinning in your own app, or whitelist the certificate used by
+mitmproxy.
 
 The transparent proxy mode is run as follows:
 
@@ -97,7 +97,7 @@ mitmdump -s mock.py --set mock=config.json -m transparent
 ```
 
 As with reverse proxy mode, `config.json` is your configuration file. There
-is server address specified, since it is sent by the client when operating
+is no server address specified, since it is sent by the client when operating
 through a proxy.
 
 ## Configuration
@@ -129,12 +129,12 @@ respectively, e.g.:
             "status": 404,
             "replace":{
                 "status": 200,
-                "content": "./example.json",
+                "content": "./example.json"
             }
         },
         "*":{
             "host": [
-                ".server.com"
+                ".server.com",
                 "foo.otherserver.com"
             ]
         }
@@ -150,8 +150,8 @@ _keys_ can be any mix of the following types:
 * exact string match without query or fragments, e.g. `/`, `/foo/bar`
 * a regular expression match denoted by a tilde prefix `~` (which not part
   of the expression itself), evaluated in order and only in case there is no
-  exact match, and _including_ query and fragmets, e.g., `~html$`, `~^/v1/`
-* the all-cases mixin `*`, which is applied as the base configuration
+  exact match, and _including_ query and fragments, e.g., `~html$`, `~^/v1/`
+* the all-cases mix-in `*`, which is applied as the base configuration
   for that section (i.e., its contents are added to the any other handler
   unless explicitly overridden therein)
 
@@ -479,7 +479,7 @@ The `modify` `replace` can be of the following formats:
 * a dictionary: the response content is interpreted as a dictionary,
   and merged with `replace` non-recursively such that any colliding
   keys are taken from `replace`
-* a string of the format `/re/sub` where `/` is an arbitary separator
+* a string of the format `/re/sub` where `/` is an arbitrary separator
   character, `re` is a regular expression, and `sub` is the substitute
   used for every occurrence of `re` in the content _string_ (note that
   this can break JSON format)
