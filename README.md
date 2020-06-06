@@ -264,17 +264,31 @@ need the backend response, use both.
 For both request and response handlers, the following keys are available
 for matching:
 
-* `scheme` (e.g., `https`)
-* `host` (e.g., `api.server.com`)
-* `path` (e.g., `/v1/pages/front`, done on full path including query
-  and fragments)
-* `query` (e.g., `{ "q": "query" }`)
+* `scheme` – the URL scheme (`http` or `https`)
+* `host` – the server hostname (e.g., `api.server.com`)
+* `path` – the path string, including query and fragmens (e.g., `/search?q=foo`)
+* `query` – the query parsed into a dictionary (e.g., `{ "q": "foo" }`)
+* `request` – the request body content
+* `headers` – the HTTP headers as a dictionary (e.g., `{ "User-Agent": "…" }`)
 
 For response handlers, the following additional keys are available:
 
-* `status` (the HTTP status code, e.g., 200)
-* `content` (the content sent by the server)
-* `error` (true/false according to the status code, 400+ is an error)
+* `status` – the HTTP status code, e.g., 200
+* `content` – the content sent by the server
+* `error` – true/false according to the status code (400+ is an error)
+
+Note that `headers` dictionary for response handlers is actually a combination
+of the request and response headers, with response headers taking priority in
+case of overlap. So the following would be valid for a
+response handler `headers` condition, with `Content-Type` referring to the
+response type:
+
+``` json
+"headers":{
+  "User-Agent": "~Apple",
+  "Content-Type": "~^text/html"
+}
+```
 
 Matching may be done either as single value or an array of such values. In
 case of an array, it suffices that any element matches, for example the

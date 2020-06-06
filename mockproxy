@@ -1,0 +1,9 @@
+#!/bin/sh
+cfg="$1"
+shift
+[ -n "$cfg" -a ! -e "$cfg" -a -e "config/$cfg" ] && cfg="config/$cfg"
+if [ -z "$cfg" -o ! -r "$cfg" ]; then
+    echo "Usage: $0 config/file.json" >&2
+    exit 1
+fi
+exec mitmproxy -s mock.py --set mock="$cfg" "$@"

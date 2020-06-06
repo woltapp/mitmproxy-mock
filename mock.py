@@ -75,9 +75,8 @@ def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
     - `scheme` (exact match or list)
     - `path` (exact match or list, normally matched already before coming here)
     - `query` (keys are exact, values either exact or list)
+    – `request` (the content of the request body)
     """
-    # TODO: Implement request header matching
-    # TODO: Implement request content matching
     if not config:
         return False
     host = request.host
@@ -97,6 +96,9 @@ def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
             value = required_query[key]
             if not ((key in query) and matches_value_or_list(query[key], value)):
                 return False
+    required_content = config.get("request")
+    if required_content and not content_matches(request.text, required_content):
+        return False
     return True
 
 def is_subset(subset, superset) -> bool:
@@ -137,22 +139,31 @@ def content_matches(content: str, allow) -> bool:
       which must be a superset `allow` (see `is_subset`)
     - a list of any of the above, which must all match
     """
-    if isinstance(allow, str):
-        if allow.startswith("~"):
-            allow_re = re.compile(allow[1:], re.X)
-            return bool(allow_re.search(content))
-        else:
-            return allow in content
-    elif isinstance(allow, dict):
-        try:
-            content_object = json.loads(content)
+    try:
+        if isinstance(allow, str):
+            if isinstance(content, dict) or isinstance(content, list):
+                content = json.dumps(content)
+            elif not isinstance(content, str):
+                content = str(content)
+            if allow.startswith("~"):
+                allow_re = re.compile(allow[1:], re.X)
+                return bool(allow_re.search(content))
+            else:
+                return allow in content
+        elif isinstance(allow, dict):
+            content_object = {}
+            if isinstance(content, str):
+                content_object = json.loads(content)
+            else:
+                content_object = content
             return is_subset(allow, content_object)
-        except:
-            return False
-    else:
-        for allowed in allow:
-            if not content_matches(content, allowed):
-                return False
+        else:
+            for allowed in allow:
+                if not content_matches(content, allowed):
+                    return False
+    except Exception as error:
+        ctx.log.info("Error: {}: matching {}".format(error, allow))
+        return False
     return True
 
 def response_matches_config(response: http.HTTPResponse, config: dict) -> bool:
@@ -166,15 +177,14 @@ def response_matches_config(response: http.HTTPResponse, config: dict) -> bool:
     For content matching, each string can either be a regular expression denoted
     by a tilde prefix (`~`), otherwise a substring that must be found exactly.
     """
-    # TODO: Implement response header matching
     required_status = config.get("status")
     if required_status and not matches_value_or_list(response.status_code, required_status):
         return False
-    required_content = config.get("content")
-    if required_content and not content_matches(response.text, required_content):
-        return False
     required_error_state = config.get("error")
     if isinstance(required_error_state, bool) and required_error_state != (response.status_code >= 400):
+        return False
+    required_content = config.get("content")
+    if required_content and not content_matches(response.text, required_content):
         return False
     return True
 
@@ -509,7 +519,10 @@ def request(flow: http.HTTPFlow) -> None:
     config = resolve_config(flow, "request")
     if config is None:
         return
-    ctx.log.debug("Match request: {}".format(flow.request.path))
+    required_headers = config.get("headers")
+    if required_headers and not content_matches(dict(flow.request.headers), required_headers):
+        return
+    ctx.log.debug("Match request {}: {}".format(flow.request.path, config))
     modify = config.get("modify")
     if modify:
         # TODO: Allow regex replacement for modify
@@ -537,7 +550,12 @@ def response(flow: http.HTTPFlow) -> None:
     config = resolve_config(flow, "response")
     if config is None:
         return
-    ctx.log.debug("Match response: {}".format(flow.request.path))
+    required_headers = config.get("headers")
+    if required_headers:
+        headers = {**dict(flow.request.headers), **dict(flow.response.headers)}
+        if not content_matches(headers, required_headers):
+            return
+    ctx.log.debug("Match response {}: {}".format(flow.request.path, config))
     replace = config.get("replace")
     if replace:
         response = replace.get("response", replace)

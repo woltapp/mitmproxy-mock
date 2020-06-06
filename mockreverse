@@ -1,0 +1,11 @@
+#!/bin/sh
+cfg="$1"
+shift
+server="$1"
+shift
+[ -n "$cfg" -a ! -e "$cfg" -a -e "config/$cfg" ] && cfg="config/$cfg"
+if [ -z "$cfg" -o -z "$server" -o ! -r "$cfg" ]; then
+    echo "Usage: $0 config/file.json https://remote.server.com" >&2
+    exit 1
+fi
+exec mitmdump -s mock.py --set mock="$cfg" -m reverse:"$server" "$@"
