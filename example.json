@@ -20,10 +20,6 @@
         }
       }
     },
-    "/pass":{
-      "pass": true,
-      "respond": "<blink>This text won't be seen, pass forwards to server</blink>"
-    },
     "/once":{
       "once":{
         "respond":{
@@ -39,6 +35,19 @@
         { "respond": "<body><h1>C</h1></body>" }
       ]
     },
+    "/pass":{
+      "pass": true,
+      "respond": "<blink>This text won't be seen, pass forwards to server</blink>"
+    },
+    "/sequence":{
+      "count":{
+        "1":{ "respond": "<h1>1</h1>" },
+        "2":{ "respond": "<h1>2</h1>" },
+        "3":{ "respond": "<h1>3</h1>" },
+        "7":{ "respond": "<h1>7</h1>" },
+        "~":{ "pass": true }
+      }
+    },
     "/count":{
       "count":{
         "1": {
@@ -52,8 +61,8 @@
           "respond": "<body><h1>2</h1><p>You have loaded this page two times.</p></body>",
           "cycle": {}
         },
-        "6": {
-          "respond": "<body><h1>6</h1><p>You have loaded this page six times.</p></body>",
+        "5": {
+          "respond": "<body><h1>5</h1><p>You have loaded this page five times.</p></body>",
           "cycle": {}
         },
         "even": {
@@ -103,13 +112,16 @@
     },
     "/unreliable":{
       "random":[
-        { "pass": true }, { "pass": true }, { "pass": true },
-        { "respond": {
+        {}, {},
+        {
+          "respond": {
             "status": 500,
             "content": "<h1>500 - Random Error</h1>"
-          }
+          },
+          "pass": false
         }
-      ]
+      ],
+      "pass": true
     },
     "/google":{
       "modify":{
@@ -119,7 +131,7 @@
       }
     },
     "~^/ba(|.)$":{
-      "respond": "<body><h1>Ba</h1></body>"
+      "respond": "<body><h1>Ba</h1><p>Regex match on path.</p></body>"
     },
     "*":{
       "host":[
@@ -145,12 +157,13 @@
         "array":[ { "id": 1 } ]
       },
       "modify":[
-        "/bar/BAR",
+        "|bar|BAR",
         {
           "merge":{
-            "mock": "inserted_item",
-            "baz": "replaced_item",
-            "array":[ { "id": 666, "note": "added element", "foo": false } ]
+            "mock": "inserted item",
+            "baz": "replaced item",
+            "array":[ { "id": 666, "note": "added element", "foo": false } ],
+            "inserted_array":[]
           }
         },
         {
@@ -163,39 +176,48 @@
           "merge":{
             "array":{
               "where": { "foo": true },
-              "merge": { "foo": false, "replaced_foo": true }
+              "merge": { "foo": false, "foo_replaced": true },
+              "forall": false
             }
           }
         },
         {
           "merge":{
             "array":{
-              "where": { "id": 4 },
-              "replace": { "id": 4, "foo": false, "replaced_element": true }
+              "where": { "id": 3 },
+              "replace": { "id": 3, "foo": false, "note": "replaced element" },
+              "move": "tail"
+            }
+          }
+        },
+        {
+          "merge":{
+            "array":{
+              "where":{ "id": 666 },
+              "move": "head"
             }
           }
         },
         {
           "replace":{
-            "other_array": [ {"id": "only_element_after_replace"} ]
-          }
-        },
-        {
-          "merge":{
-            "added_from_file": "./example.json"
+            "other_array": [
+              { "id": "e", "note": "only element after replace" }
+            ]
           }
         }
-      ]
+        ]
     },
     "/pass":{
       "pass": true
     },
-    "~":{
-      "status": 404,
-      "replace":{
-        "content": "<body><h1>404 - Not Found</h1><p>Custom error.</p></body>"
+    "~":[
+      {
+        "status": 404,
+        "replace":{
+          "content": "<body><h1>404 - Not Found</h1><p>Custom error.</p></body>"
+        }
       }
-    },
+    ],
     "*":{
       "host":[
         ".com"

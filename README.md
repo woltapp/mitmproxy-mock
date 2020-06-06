@@ -54,7 +54,19 @@ while connected through `mitmproxy` and install the certificate from there.
 ## Running
 
 You can run `mitmproxy` as the interactive console, or `mitmdump` that
-just executes the script and logs things to the terminal.
+just executes the script and logs things to the terminal. The script is
+specified using the command-line argument `-s mock.py`, and the configuration
+file for the script is set with `--set mock=config.json`.
+
+The proxy can operate in several different modes, which are detailed below. As
+a short guide:
+
+* if you can configure the server URL in the app, **reverse proxy mode** is
+  by far the simplest to set up and doesn't interfere with other traffic
+* if you are running the app on an actual device (e.g., a phone), or on
+  a virtual device that supports proxy configuration on a system level,
+  use **regular proxy mode**
+* otherwise you may need to set up **transparent proxy mode**
 
 ### Reverse Proxy Mode
 
@@ -75,30 +87,46 @@ Here `config.json` is the name of your configuration file (see below), and
 configured to use `https://localhost:8080/` (or your computer's IP address
 if not running on the same device) as the server.
 
-### Transparent Proxy Mode
+### Regular and Transparent Proxy Modes
 
-Transparent proxy mode allows passing all traffic through the proxy without
-changing the original URLs. This means that URLs need not be changed
-(allowing this mode to be used even when you don't have access to the
-client source code or configuration). However, using the proxy means you
-need application or OS level support to proxy the traffic.
+Regular and transparent proxy modes allow passing all traffic through the
+proxy without changing the original URLs, i.e., the client app does not need
+to be reconfigured (and indeed, you don't even need its source code).
 
-Some clients may also require a specific certificate instead of any trusted
-certificate for that domain – this is known as certificate pinning – which
-you must somehow overcome. This tool is meant for development, so it is
-assumed here that as the developer you are either able to disable
-certificate pinning in your own app, or whitelist the certificate used by
-mitmproxy.
-
-The transparent proxy mode is run as follows:
+The default, regular proxy, mode requires proxy support and configuration in
+the app or OS, and typically this means that all HTTP requests will go through
+the proxy, not just the ones we are interested in.
 
 ``` sh
-mitmdump -s mock.py --set mock=config.json -m transparent
+mitmproxy -s mock.py --set mock=config.json
 ```
 
 As with reverse proxy mode, `config.json` is your configuration file. There
 is no server address specified, since it is sent by the client when operating
 through a proxy.
+
+The transparent proxy mode requires setting up the device or a router to
+redirect its HTTP/HTTPS traffic through the proxy. The benefit of this is that
+it doesn't need any specific proxy configuration (or even support) on the
+client. Also, in contrast to regular proxy mode, the redirection can be done
+selectively (e.g., by IP address), using packet filter / firewall rules, so
+that not all traffic is redirected. However,
+[setting it up](https://docs.mitmproxy.org/stable/howto-transparent/)
+is fairly complicated.
+
+The transparent proxy mode is run as follows (but other configuration is
+required for traffic to be redirected into the proxy):
+
+``` sh
+mitmproxy -s mock.py --set mock=config.json -m transparent --showhost
+```
+
+Some clients may require a specific certificate instead of any trusted
+certificate for that domain – this is known as certificate pinning – which
+you must somehow overcome. This tool is meant for development, so it is
+assumed here that as the developer you are either able to disable
+certificate pinning in your own app, or whitelist the certificate used by
+mitmproxy.
 
 ## Configuration
 
@@ -184,8 +212,8 @@ For example, the following would return the status 418 only for the path
 
 ``` json
 "request":{
-    "/foo":{ },
-    "*":{ "respond": { "status": 418 } }
+  "/foo":{ },
+  "*":{ "respond":{ "status": 418 } }
 }
 ```
 
@@ -197,8 +225,8 @@ evaluated for that path:
 
 ``` json
 "request":{
-    "/foo":{ },
-    "~":{ "respond":{ "status": 418 } }
+  "/foo":{ },
+  "~":{ "respond":{ "status": 418 } }
 }
 ```
 
@@ -509,55 +537,90 @@ If any dictionary value nested inside `merge` is a string beginning
 with a dot `.` and ending with `.json`, the corresponding file is
 loaded and substituted for the string before merging.
 
-As a special case, if an existing value in the content is an array
-of dictionaries, it is possible to target specific elements of the
-array by specifying a dictionary in the `merge` object in its place
-with a `where` dictionary. The value of `where` is a dictionary that
-is matched against elements of the array as for content matching.
-For every matching element, the `where` keys siblings `merge` or
-`replace` are used to merge or replace those dictionaries with the
-matching element, as per the usual `merge` and `replace` rules.
-
 For example:
 
-``` js
+``` json
 "modify":[
-  "/foo/FOO", // string replacement
+  "|old regex|REPLACEMENT STRING",
   {
     "merge":{
-      "new_key": "inserted_item",
-      "existing_key": "replaced_item",
-      "array":[ { "this": "added_element" } ]
+      "some_new_key": "inserted item",
+      "some_existing_key": "replaced item",
+      "array":[
+        { "id": 42, "note": "added element" }
+      ]
     }
   },
   {
     "delete":{
-      "foo":{}, // delete key regardless of value
-      "array":[ { "id": 0 } ] // delete element with id 0
+      "some_existing_key": {},
+      "array":[ { "id": 1 } ],
+      "array_to_delete_entirely": {}
     }
   },
   {
-    "merge":{
-      "array":{
-        // modify specific elements of an array
-        "where":{ "foo": true },
-        "merge":{ "foo": false, "replaced_foo": true }
-      }
-    }
-  },
-  {
-    "merge":{
-      // replace specific elements of an array
-      "array":{
-        "where":{ "id": 4 },
-        "replace":{ "id": 4, "replaced_element": true }
-      }
-    }
-  },
-  {
-    // replace an entire array
     "replace":{
-      "other_array":[ {"id": 0, "only_element_in_new_array": true} ]
+      "other_array": [
+        { "note": "only element in array after replacing" }
+      ]
+    }
+  }
+]
+  ```
+
+###### Merge Where
+
+As a special case, if an existing value in the content is an array,
+it is possible to target specific elements of the array by using a
+dictionary with a `where` object in place of the array in `merge`.
+
+The `where` dictionary may contain the following keys:
+
+* `where` – an object that is matched against elements of the array;
+  any modifications are done only on matching elements
+* `replace` – a replacement object that overwrites any elements
+  in the array matching the `where` object
+* `merge` – an object that is merged (only) with elements in the array
+  matching the `where` object
+* `move` – a string, either `head` or `tail`, which causes the any elements
+  matching `where` to be moved to the head (beginning) or the tail (end) of
+  the array, respectively
+* `forall` – a boolean, if `true` (the default), the modifications are
+  applied to all elements matching `where`, otherwise only to the first match
+* `negated` –  a boolean, if `true` causes the `where` condition to be negated,
+  i.e., all of the above applies to elements _not_ matching `where`
+* `delete` – a boolean, if `true` causes any elements matching `where` to be
+  deleted from the array (this is largely superfluous due to the `delete`
+  operation, but when combined with `forall` and/or `negated`, it adds new
+  possibilities)
+
+For example:
+
+``` json
+"modify":[
+  {
+    "merge":{
+      "array":{
+        "where": { "id": 1 },
+        "merge": { "note": "modified element" },
+      }
+    }
+  },
+  {
+    "merge":{
+      "array":{
+        "where": { "id": 2 },
+        "replace": { "id": 2, "note": "replaced element" },
+        "move": "tail"
+      }
+    }
+  },
+  {
+    "merge":{
+      "array":{
+        "where":{ "id": 42 },
+        "move": "head"
+      }
     }
   }
 ]

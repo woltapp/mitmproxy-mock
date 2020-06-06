@@ -9,6 +9,7 @@
 #
 
 import json
+import os
 import random
 import re
 from collections import OrderedDict
@@ -193,12 +194,37 @@ def merge_content(merge, content):
                 content[key] = merge_content(merge[key], content.get(key))
         elif isinstance(content, list) and ("where" in merge):
             where = merge["where"]
-            for index, element in enumerate(content):
-                if is_subset(where, element):
+            match_condition = not bool(merge.get("negated", False))
+            match_move = merge.get("move")
+            index, end_index = 0, len(content)
+            while index < end_index:
+                element = content[index]
+                if bool(is_subset(where, element)) == match_condition:
+                    new_element = element
+                    if "replace" in merge:
+                        new_element = merge_content(merge["replace"], None)
                     if "merge" in merge:
-                        content[index] = merge_content(merge["merge"], element)
-                    elif "replace" in merge:
-                        content[index] = merge_content(merge["replace"], None)
+                        new_element = merge_content(merge["merge"], new_element or {})
+                    elif merge.get("delete"):
+                        new_element = None
+                    if new_element is None:
+                        del content[index]
+                        end_index -= 1
+                    elif match_move:
+                        del content[index]
+                        if match_move == "head" or match_move == "first":
+                            content.insert(0, new_element)
+                            index += 1
+                        else:
+                            content.append(new_element)
+                            end_index -= 1
+                    else:
+                        content[index] = new_element
+                        index += 1
+                    if not merge.get("forall", True):
+                        break
+                else:
+                    index += 1
         else:
             content = merge
     elif isinstance(merge, list):
@@ -274,7 +300,10 @@ def count_based_config(path, config: dict) -> dict:
         hit_count[count_id] = count
         result.update(count_config.get("*", {}))
         result.update(count_config.get("even" if (count % 2) == 0 else "odd", {}))
-        result.update(count_config.get(str(count), {}))
+        specific_config = count_config.get(str(count), count_config.get(count))
+        if specific_config is None:
+            specific_config = count_config.get("~", {})
+        result.update(specific_config or {})
     return result
 
 def encode_content(content) -> (bytes, str):
@@ -360,31 +389,49 @@ def extract_regex_paths(config: OrderedDict) -> OrderedDict:
                 ctx.log.error("Error: regex path {}: {}".format(path, error))
     return re_paths
 
+def load_config_file(mock_filename: str) -> None:
+    """
+    Loads the configuration file `mock_filename`, replacing the global config.
+    """
+    global mock_config, re_request, re_response
+    global hit_count, cycle_index, config_modified_at
+    ctx.log.info("Loading mock configuration {}".format(mock_filename))
+    try:
+        with open(mock_filename) as mock_config_file:
+            # OrderedDict hack to preserve path regex order
+            ordered_config = json.load(mock_config_file, object_pairs_hook=OrderedDict)
+            mock_config = json.loads(json.dumps(ordered_config))
+            config_modified_at = os.path.getmtime(mock_filename)
+            hit_count.clear()
+            cycle_index.clear()
+            re_request = extract_regex_paths(ordered_config.get("request"))
+            re_response = extract_regex_paths(ordered_config.get("response"))
+    except Exception as error:
+        ctx.log.error("Error: {}: {}".format(mock_filename, error))
+    if not mock_config:
+        ctx.log.error("No configuration: use --set config.json")
+
+def reload_config_if_updated(mock_filename: Optional[str] = None) -> None:
+    """
+    Reloads the configuration file `mock_filename` if it has been modified.
+    """
+    try:
+        if not mock_filename:
+            mock_filename = ctx.options.mock
+        timestamp = os.path.getmtime(mock_filename)
+        if not config_modified_at or timestamp > config_modified_at:
+            load_config_file(mock_filename)
+    except Exception as error:
+        ctx.log.error("Error: {}: {}".format(mock_filename, error))
+
 # Called when the script is loaded, registers command-line options.
 def load(script) -> None:
     script.add_option("mock", str, "mock.json", "Mock configuration JSON file")
 
 # Called to configure the script
 def configure(updated) -> None:
-    global mock_config, re_request, re_response
-    global hit_count, cycle_index
     if "mock" in updated:
-        mock_filename = ctx.options.mock
-        with open(mock_filename) as mock_config_file:
-            try:
-                # OrderedDict hack to preserve path regex order
-                ordered_config = json.load(mock_config_file, object_pairs_hook=OrderedDict)
-                mock_config = json.loads(json.dumps(ordered_config))
-                hit_count.clear()
-                cycle_index.clear()
-                re_request = extract_regex_paths(ordered_config.get("request"))
-                re_response = extract_regex_paths(ordered_config.get("response"))
-                ctx.log.info("Mock configuration: {}".format(mock_filename))
-            except Exception as error:
-                ctx.log.error("Error: {}: {}".format(mock_filename, error))
-        if not mock_config:
-            ctx.log.error("No configuration: use --set config.json")
-            return
+        load_config_file(ctx.options.mock)
 
 def resolve_config(flow: http.HTTPFlow, event: str) -> Optional[dict]:
     """
@@ -392,6 +439,7 @@ def resolve_config(flow: http.HTTPFlow, event: str) -> Optional[dict]:
     the flow state and the global mock configuration, or `None` if no
     configuration item matches the event.
     """
+    reload_config_if_updated()
     is_request = (event == "request")
     path = flow.request.path.split("?")[0]
     handlers = mock_config.get(event, {})
@@ -562,3 +610,6 @@ hit_count = {}
 
 # Round-robin cycle indices (for `cycle`).
 cycle_index = {}
+
+# The modification time of the config file.
+config_modified_at = None
