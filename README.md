@@ -1,19 +1,22 @@
 # MITMProxy Mock
 
 This repository contains scripts for using [mitmproxy](https://mitmproxy.org)
-to insert mock responses for http requests for the purposes of app
-development.
+as a tool for app development and testing, in particular to insert mock
+responses, and/or modify existing responses and/or requests
+based on various criteria.
 
 MITM stands for man-in-the-middle, i.e., the tool goes in between the client
 and server, and can capture, replace, and/or modify requests and responses
-between them. This script is intended specifically to aid development of
-applications, e.g.:
+between them. The mock setup is configured in JSON, i.e., no coding is required
+to use this tool. Among other things, it can do:
 
 * mocking responses for endpoints not yet implemented on the backend
 * reproducing specific flows, including error responses; one-shot,
 multi-stage, cyclic, and randomly selected actions are supported
 * matching specific responses from the real backend and modifying their
 contents (e.g., insert new data into an existing response)
+* logging occurrences of specific requests or responses
+* introducing random errors to simulate unreliable conditions
 
 ## Installation
 
@@ -378,7 +381,7 @@ A number of "stateful" path handlers are available:
 
 * `once` – the contents are evaluated only once for that path
 * `count` – a dictionary of handlers with specific counts as strings,
-  `even`, `odd`, and/or `*` as keys, whereby all matching handlers are
+  `even`, `odd`, `~`, and/or `*` as keys, whereby all matching handlers are
   merged together such that the more specific ones take precedence
   (the id for each count is normally the path, but the `count`
   dictionary may contain an `id` key to override this)
@@ -641,3 +644,11 @@ For example:
   }
 ]
 ```
+
+## Authors
+
+* [Kimmo Kulovesi](https://github.com/arkku) – original design and implementation
+
+## License and Copyright
+
+[MIT license](./LICENSE), © [Wolt Enterprises](https://github.com/woltapp)

@@ -1,11 +1,16 @@
 #
-# mock-server.py: A mitmproxy script for mocking server responses.
+# mock-server.py: A mitmproxy script for mocking/modifying server responses.
+#
 # The mock configuration is loaded from a JSON file, e.g.:
 #
 #   mitmdump -s mock.py --set mock=example.json -m reverse:https://foo.com/
 #
-# Documentation is a work in progress, see example.json for examples or ask
-# the author (Kimmo Kulovesi) for now.
+# See config/example.json and README.md for examples and documentation.
+#
+# Authors:
+# * Kimmo Kulovesi (design and initial version), https://github.com/arkku
+#
+# Copyright © 2020 Wolt Enterprises
 #
 
 import json
@@ -529,6 +534,7 @@ def count_based_config(path, count_config: dict) -> dict:
     Note that the keys of `config["count"]` are strings, even for the numeric
     counts, since the data is loaded from JSON.
     """
+    global hit_count
     result = {}
     if count_config:
         count_id = count_config.get("id", path)
@@ -547,6 +553,7 @@ def resolve_config_state(path: str, config: dict, is_copy: bool = False) -> dict
     Returns a copy of `config` after all stateful handlers have been resolved
     to the current state.
     """
+    global cycle_index
     if "once" in config:
         if not is_copy:
             config, is_copy = {**config}, True
@@ -568,8 +575,8 @@ def resolve_config_state(path: str, config: dict, is_copy: bool = False) -> dict
         if cycle:
             cycle_id = config.get("cycle-id", path)
             index = cycle_index.get(cycle_id, 0)
-            cycle_index[cycle_id] = ((index + 1) % len(cycle))
-            config.update(cycle[index])
+            cycle_index[cycle_id] = index + 1
+            config.update(cycle[index % len(cycle)])
             return resolve_config_state(path, config, is_copy)
     if "random" in config:
         if not is_copy:
