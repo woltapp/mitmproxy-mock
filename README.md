@@ -82,7 +82,13 @@ network traffic on the device.
 Reverse proxy mode can be run as follows:
 
 ``` sh
-mitmdump -s mock.py --set mock=config.json -m reverse:https://api.server.com/
+mitmdump -s mock.py --set mock=config.json -m reverse:https://api.server.com
+```
+
+or
+
+``` sh
+./mockreverse config.json https://api.server.com
 ```
 
 Here `config.json` is the name of your configuration file (see below), and
@@ -102,6 +108,12 @@ the proxy, not just the ones we are interested in.
 
 ``` sh
 mitmproxy -s mock.py --set mock=config.json
+```
+
+or
+
+``` sh
+./mockproxy config.json
 ```
 
 As with reverse proxy mode, `config.json` is your configuration file. There
