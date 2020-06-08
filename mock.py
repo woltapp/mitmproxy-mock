@@ -20,7 +20,7 @@ from mitmproxy import net
 
 def host_matches(host: str, allow) -> bool:
     """
-    Return whether `host` matches `allow`.
+    Returns whether `host` matches `allow`.
 
     `allow` may be a string pattern, or a list of such patterns, in which
     case returns True if `host` matches any pattern in `allow`.
@@ -28,6 +28,8 @@ def host_matches(host: str, allow) -> bool:
     - If the pattern begins with a dot, `host` must end with the suffix
       following the dot
     - If the patterns ends with a dot, `host` must start with the pattern
+    - If the patterns begins with a tilde, the rest of the pattern is treated as
+      a regular expression that must be found in `host`
     - Otherwise `host` must equal the pattern
     """
     if isinstance(allow, str):
@@ -35,20 +37,35 @@ def host_matches(host: str, allow) -> bool:
             return host.endswith(allow[1:])
         elif allow.endswith("."):
             return host.startswith(allow)
+        elif allow.startswith("~"):
+            return bool(compiled_re_for(allow[1:]).search(host))
         else:
             return host == allow
     elif isinstance(allow, dict):
-        if host in allow:
-            return True
+        return allow.get(host, False)
+    elif allow is None:
+        return True
     else:
         for allowed_host in allow:
             if host_matches(host, allowed_host):
                 return True
     return False
 
+def compiled_re_for(re_str: str):
+    """
+    Returns a compiled regular expression object for the string `re_str`.
+    The compiled regular expressions are cached in memory.
+    """
+    global re_cache
+    result = re_cache.get(re_str)
+    if result is None:
+        result = re.compile(re_str, re.X)
+        re_cache[re_str] = result
+    return result
+
 def matches_value_or_list(value, allow) -> bool:
     """
-    Return whether `value` matches `allow`.
+    Returns whether `value` matches `allow`.
 
     `allow` may either be of the same type as `value`, or a list of such items,
     in which case returns True if `value` matches any element of `allow`. In
@@ -57,10 +74,11 @@ def matches_value_or_list(value, allow) -> bool:
     """
     if type(value) is type(allow):
         if isinstance(allow, str) and allow.startswith("~"):
-            allow_re = re.compile(allow[1:], re.X)
-            return bool(allow_re.search(value)) or value == allow
+            return (value == allow) or bool(compiled_re_for(allow[1:]).search(value))
         else:
             return value == allow
+    elif isinstance(allow, dict):
+        return allow.get(value, False)
     else:
         for allowed in allow:
             if matches_value_or_list(str, allowed):
@@ -79,9 +97,8 @@ def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
     """
     if not config:
         return False
-    host = request.host
-    whitelist = config.get("host", mock_config.get("host"))
-    if (whitelist is not None) and not host_matches(host, whitelist):
+    host_whitelist = config.get("host", mock_config.get("host"))
+    if not host_matches(request.host, host_whitelist):
         return False
     required_scheme = config.get("scheme", mock_config.get("scheme"))
     if required_scheme and not matches_value_or_list(request.scheme, required_scheme):
@@ -103,7 +120,7 @@ def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
 
 def is_subset(subset, superset) -> bool:
     """
-    Return whether `subset` is indeed a subset of `superset`. That is, all
+    Returns whether `subset` is indeed a subset of `superset`. That is, all
     items contained in `subset` must be found exactly in `superset`. Any strings
     in subset may be prefixed with a tilde (`~`) in which case the suffix is
     interpreted as a regular expression.
@@ -117,7 +134,7 @@ def is_subset(subset, superset) -> bool:
             if subset == "~":
                 return True
             elif subset.startswith("~"):
-                allow_re = re.compile(subset[1:], re.M | re.X | re.S)
+                allow_re = compiled_re_for(subset[1:])
                 return bool(allow_re.search(str(superset)))
             else:
                 return str(superset) == subset
@@ -127,7 +144,7 @@ def is_subset(subset, superset) -> bool:
         ctx.log.debug("is_subset incompatible types: {}: {} {}".format(error, subset, superset))
         return False
 
-def content_matches(content: str, allow) -> bool:
+def content_matches(content_str: Optional[str], allow, content_object = None) -> bool:
     """
     Returns whether `content` matches the `allow` criteria.
 
@@ -139,31 +156,29 @@ def content_matches(content: str, allow) -> bool:
       which must be a superset `allow` (see `is_subset`)
     - a list of any of the above, which must all match
     """
-    try:
-        if isinstance(allow, str):
-            if isinstance(content, dict) or isinstance(content, list):
-                content = json.dumps(content)
-            elif not isinstance(content, str):
-                content = str(content)
-            if allow.startswith("~"):
-                allow_re = re.compile(allow[1:], re.X)
-                return bool(allow_re.search(content))
-            else:
-                return allow in content
-        elif isinstance(allow, dict):
-            content_object = {}
-            if isinstance(content, str):
-                content_object = json.loads(content)
-            else:
-                content_object = content
-            return is_subset(allow, content_object)
-        else:
-            for allowed in allow:
-                if not content_matches(content, allowed):
+    if isinstance(allow, str) or isinstance(allow, dict):
+        allow = [ allow ]
+    for allowed in allow:
+        try:
+            if isinstance(allowed, str):
+                if content_str is None:
+                    content_str = content_as_str(content_object) or str(content_object)
+                if allowed.startswith("~"):
+                    allow_re = compiled_re_for(allowed[1:])
+                    if not allow_re.search(content_str):
+                        return False
+                elif not allowed in content_str:
                     return False
-    except Exception as error:
-        ctx.log.info("Error: {}: matching {}".format(error, allow))
-        return False
+            elif isinstance(allowed, dict):
+                if content_object is None:
+                    content_object = content_as_object(content_str) or {}
+                if not is_subset(allowed, content_object):
+                    return False
+            elif not content_matches(content_str, allowed, content_object):
+                return False
+        except Exception as error:
+            ctx.log.info("Error: {}: matching {}".format(error, allowed))
+            return False
     return True
 
 def response_matches_config(response: http.HTTPResponse, config: dict) -> bool:
@@ -286,35 +301,102 @@ def delete_content(delete, content):
             content = []
     return content
 
-def count_based_config(path, config: dict) -> dict:
+def content_as_str(content) -> str:
     """
-    Return a configuration dict from `config["count"]` based on the number of
-    times `path` has been hit.
-
-    The configuration dictionary is formed from `config["count"]` keys applied
-    on top of one another in the following order:
-    - `*`: applied to every count
-    - `odd` or `even`: applied to alternating counts
-    - `1`, `2`, `3`, …: applied to exact counts, starting from 1
-
-    Note that the keys of `config["count"]` are strings, even for the numeric
-    counts, since the data is loaded from JSON.
+    Returns `content` as a string, converting to JSON if necessary.
     """
-    result = {}
-    count_config = config.get("count")
-    if (not count_config) and ("once" in config):
-        count_config = { "1": config["once"] }
-    if count_config:
-        count_id = count_config.get("id", path)
-        count = hit_count.get(count_id, 0) + 1
-        hit_count[count_id] = count
-        result.update(count_config.get("*", {}))
-        result.update(count_config.get("even" if (count % 2) == 0 else "odd", {}))
-        specific_config = count_config.get(str(count), count_config.get(count))
-        if specific_config is None:
-            specific_config = count_config.get("~", {})
-        result.update(specific_config or {})
-    return result
+    if isinstance(content, str):
+        return content
+    elif content is None:
+        return ""
+    try:
+        if isinstance(content, bytes):
+            content = content.decode("utf-8")
+        else:
+            content = json.dumps(content)
+    except Exception as error:
+        ctx.log.info("Error converting to text: {}: {}".format(error, content))
+        content = ""
+    return content
+
+def content_as_object(content):
+    """
+    Returns `content` as an object, converting from JSON if necessary.
+    """
+    if isinstance(content, str) or content is None:
+        try:
+            content = json.loads(content)
+        except Exception as error:
+            ctx.log.info("Error loading JSON: {}: {}".format(error, content))
+            content = {}
+    return content
+
+def replace_in_content(replace, content):
+    """
+    Performs replacement `replace` (dict update or regex sub) in `content`.
+    """
+    if isinstance(replace, dict):
+        content = content_as_object(content) or {}
+        try:
+            content.update(replace)
+        except Exception:
+            content = replace
+    elif replace:
+        if isinstance(replace, str):
+            fields = replace[1:].split(replace[0])
+            if len(fields) == 2:
+                replace = fields
+            else:
+                return replace
+        sub_re, replacement = compiled_re_for(replace[0]), replace[1]
+        try:
+            content = sub_re.sub(replacement, content_as_str(content))
+        except ValueError as error:
+            ctx.log.error("Invalid JSON: {}: after replace: {}".format(error, replace))
+    return content
+
+def modify_content(modify, content):
+    """
+    Returns `content` modified according to all elements of `modify`.
+    """
+    if isinstance(modify, dict) or isinstance(modify, str):
+        modify = [ modify ]
+    for modification in modify:
+        if isinstance(modification, dict):
+            delete = modification.get("delete")
+            replace = modification.get("replace")
+            merge = modification.get("merge")
+            if delete:
+                content = delete_content(delete, content_as_object(content))
+            if replace:
+                if isinstance(replace, str):
+                    try:
+                        with open(replace, "rb") as replace_file:
+                            text = replace_file.read().decode("utf-8")
+                            try:
+                                replace = json.loads(text)
+                            except ValueError:
+                                replace = text
+                    except Exception:
+                        pass
+                if isinstance(replace, str):
+                    content = replace
+                else:
+                    content = replace_in_content(replace, content)
+            if merge:
+                if isinstance(merge, str):
+                    with open(merge) as merge_file:
+                        merge = json.load(merge_file)
+                content = merge_content(merge, content_as_object(content))
+        else:
+            try:
+                if isinstance(modification, str):
+                    modification = modification[1:].split(modification[0])
+                sub_re, replacement = compiled_re_for(modification[0]), modification[1]
+                content = sub_re.sub(replacement, content_as_str(content))
+            except Exception as error:
+                ctx.log.info("Error modifying with {}: {}".format(modification, error))
+    return content
 
 def encode_content(content) -> (bytes, str):
     """
@@ -344,9 +426,7 @@ def encode_content(content) -> (bytes, str):
         except FileNotFoundError:
             if content.startswith("<"):
                 content_type = "text/html"
-            return content.encode("utf-8"), content_type + "; charset=utf-8"
-    else:
-        return json.dumps(content).encode("utf-8"), content_type + "; charset=utf-8"
+    return content_as_str(content).encode("utf-8"), content_type + "; charset=utf-8"
 
 def make_response(response, status, content, headers) -> http.HTTPResponse:
     """
@@ -393,7 +473,7 @@ def extract_regex_paths(config: OrderedDict) -> OrderedDict:
             if not path.startswith("~"):
                 continue
             try:
-                path_re = re.compile(path[1:], re.X)
+                path_re = compiled_re_for(path[1:])
                 re_paths[path_re] = json.loads(json.dumps(handler))
             except Exception as error:
                 ctx.log.error("Error: regex path {}: {}".format(path, error))
@@ -429,19 +509,76 @@ def reload_config_if_updated(mock_filename: Optional[str] = None) -> None:
         if not mock_filename:
             mock_filename = ctx.options.mock
         timestamp = os.path.getmtime(mock_filename)
-        if not config_modified_at or timestamp > config_modified_at:
+        if timestamp != config_modified_at:
             load_config_file(mock_filename)
     except Exception as error:
         ctx.log.error("Error: {}: {}".format(mock_filename, error))
 
-# Called when the script is loaded, registers command-line options.
-def load(script) -> None:
-    script.add_option("mock", str, "mock.json", "Mock configuration JSON file")
+def count_based_config(path, count_config: dict) -> dict:
+    """
+    Returns`count_config` reduced to the merged configuration for this
+    iteration based on the number of times `path` has been hit.
 
-# Called to configure the script
-def configure(updated) -> None:
-    if "mock" in updated:
-        load_config_file(ctx.options.mock)
+    The configuration dictionary is formed from these keys applied
+    on top of one another in the following order:
+    - `*`: applied to every count
+    - `odd` or `even`: applied to alternating counts
+    - `1`, `2`, `3`, …: applied to exact counts, starting from 1
+    - `~`: applied in case there are no matching exact counts
+
+    Note that the keys of `config["count"]` are strings, even for the numeric
+    counts, since the data is loaded from JSON.
+    """
+    result = {}
+    if count_config:
+        count_id = count_config.get("id", path)
+        count = hit_count.get(count_id, 0) + 1
+        hit_count[count_id] = count
+        result.update(count_config.get("*", {}))
+        result.update(count_config.get("even" if (count % 2) == 0 else "odd", {}))
+        specific_config = count_config.get(str(count), count_config.get(count))
+        if specific_config is None:
+            specific_config = count_config.get("~", {})
+        result.update(specific_config or {})
+    return result
+
+def resolve_config_state(path: str, config: dict, is_copy: bool = False) -> dict:
+    """
+    Returns a copy of `config` after all stateful handlers have been resolved
+    to the current state.
+    """
+    if "once" in config:
+        if not is_copy:
+            config, is_copy = {**config}, True
+        once_config = config.pop("once")
+        if once_config:
+            config.update(count_based_config(path, { "1": once_config }))
+            return resolve_config_state(path, config, is_copy)
+    if "count" in config:
+        if not is_copy:
+            config, is_copy = {**config}, True
+        count_config = config.pop("count")
+        if count_config:
+            config.update(count_based_config(path, count_config))
+            return resolve_config_state(path, config, is_copy)
+    if "cycle" in config:
+        if not is_copy:
+            config, is_copy = {**config}, True
+        cycle = config.pop("cycle")
+        if cycle:
+            cycle_id = config.get("cycle-id", path)
+            index = cycle_index.get(cycle_id, 0)
+            cycle_index[cycle_id] = ((index + 1) % len(cycle))
+            config.update(cycle[index])
+            return resolve_config_state(path, config, is_copy)
+    if "random" in config:
+        if not is_copy:
+            config, is_copy = {**config}, True
+        random_configs = config.pop("random")
+        if random_configs:
+            config.update(random.choice(random_configs))
+            return resolve_config_state(path, config, is_copy)
+    return config
 
 def resolve_config(flow: http.HTTPFlow, event: str) -> Optional[dict]:
     """
@@ -488,17 +625,7 @@ def resolve_config(flow: http.HTTPFlow, event: str) -> Optional[dict]:
             config = {**config, **path_handler}
         if not (request_matches_config(flow.request, config) and (is_request or response_matches_config(flow.response, config))):
             return None
-    # TODO: Allow recursive cycle/random/count
-    config.update(count_based_config(path, config))
-    cycle = config.get("cycle", config.get("round"))
-    if cycle:
-        cycle_id = config.get("cycle-id", path)
-        index = cycle_index.get(cycle_id, 0)
-        cycle_index[cycle_id] = ((index + 1) % len(cycle))
-        config.update(cycle[index])
-    random_configs = config.get("random")
-    if random_configs:
-        config.update(random.choice(random_configs))
+    config = resolve_config_state(path, config)
     if config.get("pass", False):
         return None
     msg = config.get("log")
@@ -525,17 +652,22 @@ def request(flow: http.HTTPFlow) -> None:
     ctx.log.debug("Match request {}: {}".format(flow.request.path, config))
     modify = config.get("modify")
     if modify:
-        # TODO: Allow regex replacement for modify
         ctx.log.debug("Modify request: {} -> {}".format(flow.request, modify))
         flow.request.scheme = modify.get("scheme", flow.request.scheme)
         flow.request.host = modify.get("host", flow.request.host)
         flow.request.path = modify.get("path", flow.request.path)
-        flow.request.query = {**(flow.request.query or {}), **modify.get("query", {})}
-        content = modify.get("content")
-        if content:
-            content, _ = encode_content(content)
-            flow.request.content = content
+        query_modifier = modify.get("query")
+        if query_modifier:
+            query = flow.request.query or {}
+            if isinstance(query_modifier, str) or isinstance(query_modifier, list):
+                flow.request.query = content_as_object(modify_content(query_modifier, dict(query)))
+            else:
+                flow.request.query = {**query, **query_modifier}
         flow.request.headers.update(modify.get("headers", {}))
+        modifier = modify.get("content")
+        if modifier is not None:
+            content = flow.request.text or ""
+            flow.request.text = content_as_str(modify_content(modifier, content))
     response = config.get("respond")
     if response:
         flow.response = make_response(response, 200, "", {})
@@ -570,52 +702,24 @@ def response(flow: http.HTTPFlow) -> None:
         if isinstance(global_modify, dict) or isinstance(global_modify, str):
             global_modify = [ global_modify ]
         modify = global_modify + modify
-    for modification in modify:
-        if isinstance(modification, dict):
-            content = {}
-            try:
-                content = json.loads(flow.response.text)
-            except ValueError as error:
-                ctx.log.info("Invalid JSON: {}: {}".format(error, flow.response.text))
-            delete = modification.get("delete")
-            replace = modification.get("replace")
-            merge = modification.get("merge")
-            if delete:
-                content = delete_content(delete, content)
-            if replace:
-                if isinstance(replace, str):
-                    try:
-                        with open(replace) as replace_file:
-                            replace = json.load(replace_file)
-                    except FileNotFoundError:
-                        pass
-                if isinstance(replace, dict):
-                    content.update(replace)
-                else:
-                    if isinstance(replace, str):
-                        replace = replace[1:].split(replace[0])
-                    sub_re, replacement = re.compile(replace[0], re.X), replace[1]
-                    flow.response.text = sub_re.sub(replacement, flow.response.text)
-                    try:
-                        content = json.loads(flow.response.text)
-                    except ValueError as error:
-                        ctx.log.error("Invalid JSON: {}: after replace: {}".format(error, replace))
-            if merge:
-                if isinstance(merge, str):
-                    with open(merge) as merge_file:
-                        merge = json.load(merge_file)
-                content = merge_content(merge, content)
-            flow.response.content = json.dumps(content or {}).encode("utf-8")
-        else:
-            if isinstance(modification, str):
-                modification = modification[1:].split(modification[0])
-            sub_re, replacement = re.compile(modification[0], re.X), modification[1]
-            flow.response.text = sub_re.sub(replacement, flow.response.text)
     if modify:
+        flow.response.text = content_as_str(modify_content(modify, flow.response.text))
         ctx.log.debug("Modify response {}: {}".format(flow.request.path, modify))
+
+# Called when the script is loaded, registers command-line options.
+def load(script) -> None:
+    script.add_option("mock", str, "mock.json", "Mock configuration JSON file")
+
+# Called to configure the script.
+def configure(updated) -> None:
+    if "mock" in updated:
+        load_config_file(ctx.options.mock)
 
 # The global configuration.
 mock_config = {}
+
+# Compiled regular expressions indexed by string.
+re_cache = {}
 
 # Regex paths for requests.
 re_request = OrderedDict()

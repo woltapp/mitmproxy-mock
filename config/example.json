@@ -8,12 +8,12 @@
     },
     "/file":{
       "respond":{
-        "content": "./example.json"
+        "content": "./config/example.json"
       }
     },
     "/object":{
       "respond":{
-        "content": {
+        "content":{
           "embedded":{
             "json": [ "object "]
           }
@@ -44,7 +44,7 @@
         "1":{ "respond": "<h1>1</h1>" },
         "2":{ "respond": "<h1>2</h1>" },
         "3":{ "respond": "<h1>3</h1>" },
-        "7":{ "respond": "<h1>7</h1>" },
+        "5":{ "respond": "<h1>7</h1>" },
         "~":{ "pass": true }
       }
     },
@@ -81,29 +81,6 @@
         }
       }
     },
-    "/foo":[
-      {
-        "query": { "q": "foo" },
-        "respond": "<body><h1>FOO</h1></body>"
-      },
-      {
-        "query": { "q": "~ba[rz]" },
-        "count":{
-          "id": "barbaz",
-          "even":{ "respond": "<body><h1>Baz</h1></body>" },
-          "odd":{ "respond": "<body><h1>Bar</h1></body>" }
-        }
-      },
-      {
-        "count":{
-          "id": "foobar",
-          "1":{ "respond": "<body><h1>Foo</h1></body>" },
-          "2":{ "respond": "<body><h1>Bar</h1></body>" },
-          "3":{ "respond": "<body><h1>Baz</h1></body>" },
-          "*":{ "respond": "<body><h1>Foobar</h1></body>" }
-        }
-      }
-    ],
     "/flip":{
       "random":[
         { "respond": "<body><h1>Heads</h1></body>" },
@@ -123,11 +100,64 @@
       ],
       "pass": true
     },
+    "/foo":[
+      {
+        "query": { "q": "~^foo(ba[rz])*$" },
+        "count":{
+          "id":"foo_caps",
+          "1":{ "respond": "<body><h1>FOO</h1></body>" },
+          "2":{ "respond": "<body><h1>BAR</h1></body>" },
+          "3":{ "respond": "<body><h1>BAZ</h1></body>" },
+          "*":{ "respond": "<body><h1>FOOBAR</h1></body>" }
+        }
+      },
+      {
+        "count":{
+          "1":{ "respond": "<body><h1>Foo</h1></body>" },
+          "2":{ "respond": "<body><h1>Bar</h1></body>" },
+          "3":{ "respond": "<body><h1>Baz</h1></body>" },
+          "*":{ "respond": "<body><h1>Foobar</h1></body>" }
+        }
+      }
+    ],
+    "/nested":{
+      "cycle":[
+        {
+          "cycle-id": "nested_a",
+          "cycle":[
+            {
+              "once":{
+                "respond": "<body><h1>A1</h1><p>First iteration!</p></body>"
+              },
+              "respond": "<body><h1>A1</h1></body>"
+            },
+            { "respond": "<body><h1>A2</h1></body>" },
+            { "respond": "<body><h1>A3</h1></body>" }
+          ]
+        },
+        {
+          "cycle-id": "nested_b",
+          "cycle":[
+            { "respond": "<body><h1>B1</h1></body>" },
+            { "respond": "<body><h1>B2</h1></body>" },
+            {
+              "random":[
+                { "respond": "<body><h1>B3</h1><p>heads</p></body>" },
+                { "respond": "<body><h1>B3</h1><p>tails</p></body>" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
     "/google":{
       "modify":{
         "host": "www.google.com",
         "path": "/",
-        "query":{ "q": "mitmproxy" }
+        "query":{ "q": "mitmproxy" },
+        "content":{
+          "replace": ""
+        }
       }
     },
     "~^/ba(|.)$":{
@@ -145,7 +175,7 @@
       "status": 404,
       "replace":{
         "status": 200,
-        "content": "./example.json",
+        "content": "./config/example.json",
         "type": "application/json"
       }
     },
@@ -217,7 +247,7 @@
       {
         "status": 404,
         "replace":{
-          "content": "<body><h1>404 - Not Found</h1><p>Custom error.</p></body>"
+          "content": "<body><h1>404 - Not Found</h1><p>The server responded with 404 error, which was intercepted and replaced with this.</p></body>"
         }
       }
     ],

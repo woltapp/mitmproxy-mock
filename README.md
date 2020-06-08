@@ -411,12 +411,14 @@ error code with a one in four probability:
 }
 ```
 
-Currently these handlers can only be nested up to one level, and only
-in the order given (i.e., `cycle` can be inside `count`, and `random`
-can be inside `cycle` or `count`). In the future arbitrary nesting may
-be supported.
-
-See `example.json` for more examples of these.
+These handlers can be nested arbitrarily. Note that if you are have multiple
+alternate `count` or multiple `cycle` handlers for the same path, they will
+default to sharing the count or index, since it defaults to being identified
+by the path. Meanwhile, for regular expression path handlers use the _actual_
+path as the default identifier, and will _not_ by default share the count/index
+across different paths matching the same regular expression. You can specify
+`id` inside the `count` dictionary, or `cycle-id` alongside `cycle`, to
+override this.
 
 ### Actions
 
