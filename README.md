@@ -285,7 +285,7 @@ for matching:
 
 * `scheme` – the URL scheme (`http` or `https`)
 * `host` – the server hostname (e.g., `api.server.com`)
-* `path` – the path string, including query and fragmens (e.g., `/search?q=foo`)
+* `path` – the path string, including query and fragments (e.g., `/search?q=foo`)
 * `query` – the query parsed into a dictionary (e.g., `{ "q": "foo" }`)
 * `request` – the request body content
 * `headers` – the HTTP headers as a dictionary (e.g., `{ "User-Agent": "…" }`)
@@ -637,7 +637,7 @@ For example:
     "merge":{
       "array":{
         "where": { "id": 1 },
-        "merge": { "note": "modified element" },
+        "merge": { "note": "modified element" }
       }
     }
   },
