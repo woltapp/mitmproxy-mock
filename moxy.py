@@ -1,9 +1,9 @@
 #
-# mock-server.py: A mitmproxy script for mocking/modifying server responses.
+# moxy.py: A mitmproxy script for mocking/modifying server responses.
 #
 # The mock configuration is loaded from a JSON file, e.g.:
 #
-#   mitmdump -s mock.py --set mock=example.json -m reverse:https://foo.com/
+#   mitmdump -s moxy.py --set mock=example.json -m reverse:https://foo.com/
 #
 # See config/example.json and README.md for examples and documentation.
 #

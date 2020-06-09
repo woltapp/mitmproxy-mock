@@ -8,4 +8,4 @@ if [ -z "$cfg" -o -z "$server" -o ! -r "$cfg" ]; then
     echo "Usage: $0 config/file.json https://remote.server.com" >&2
     exit 1
 fi
-exec mitmdump -s mock.py --set mock="$cfg" -m reverse:"$server" "$@"
+exec mitmdump -s moxy.py --set mock="$cfg" -m reverse:"$server" "$@"

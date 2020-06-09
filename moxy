@@ -6,4 +6,4 @@ if [ -z "$cfg" -o ! -r "$cfg" ]; then
     echo "Usage: $0 config/file.json" >&2
     exit 1
 fi
-exec mitmproxy -s mock.py --set mock="$cfg" "$@"
+exec mitmproxy -s moxy.py --set mock="$cfg" "$@"

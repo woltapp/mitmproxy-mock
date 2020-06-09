@@ -1,13 +1,13 @@
-# MITMProxy Mock
+# Moxy – A MITMProxy Mock Script
 
-This repository contains scripts for using [mitmproxy](https://mitmproxy.org)
+Moxy is a script to easily configure [mitmproxy](https://mitmproxy.org)
 as a tool for app development and testing, in particular to insert mock
 responses, and/or modify existing responses and/or requests
 based on various criteria.
 
-MITM stands for man-in-the-middle, i.e., the tool goes in between the client
-and server, and can capture, replace, and/or modify requests and responses
-between them. The mock setup is configured in JSON, i.e., no coding is required
+The MITM stands for man-in-the-middle, i.e., the tool goes in between the
+client and server, and can capture, replace, and/or modify requests and
+responses between them. The configuration is JSON, i.e., no coding is required
 to use this tool. Among other things, it can do:
 
 * mocking responses for endpoints not yet implemented on the backend
@@ -58,7 +58,7 @@ while connected through `mitmproxy` and install the certificate from there.
 
 You can run `mitmproxy` as the interactive console, or `mitmdump` that
 just executes the script and logs things to the terminal. The script is
-specified using the command-line argument `-s mock.py`, and the configuration
+specified using the command-line argument `-s moxy.py`, and the configuration
 file for the script is set with `--set mock=config.json`.
 
 The proxy can operate in several different modes, which are detailed below. As
@@ -82,13 +82,13 @@ network traffic on the device.
 Reverse proxy mode can be run as follows:
 
 ``` sh
-mitmdump -s mock.py --set mock=config.json -m reverse:https://api.server.com
+mitmdump -s moxy.py --set mock=config.json -m reverse:https://api.server.com
 ```
 
 or
 
 ``` sh
-./mockreverse config.json https://api.server.com
+./moxyserver config.json https://api.server.com
 ```
 
 Here `config.json` is the name of your configuration file (see below), and
@@ -107,13 +107,13 @@ the app or OS, and typically this means that all HTTP requests will go through
 the proxy, not just the ones we are interested in.
 
 ``` sh
-mitmproxy -s mock.py --set mock=config.json
+mitmproxy -s moxy.py --set mock=config.json
 ```
 
 or
 
 ``` sh
-./mockproxy config.json
+./moxy config.json
 ```
 
 As with reverse proxy mode, `config.json` is your configuration file. There
@@ -133,7 +133,7 @@ The transparent proxy mode is run as follows (but other configuration is
 required for traffic to be redirected into the proxy):
 
 ``` sh
-mitmproxy -s mock.py --set mock=config.json -m transparent --showhost
+mitmproxy -s moxy.py --set mock=config.json -m transparent --showhost
 ```
 
 Some clients may require a specific certificate instead of any trusted
@@ -676,6 +676,7 @@ For example:
 ## Authors
 
 * [Kimmo Kulovesi](https://github.com/arkku) – original design and implementation
+* [Scott Lyttle](https://github.com/scottlyttle) – the name "Moxy"
 
 ## License and Copyright
 
