@@ -145,10 +145,11 @@ mitmproxy.
 
 ## Configuration
 
-The main benefit of using this script instead of writing your own is the
-simplicity of configuration. However, the configuration itself supports
-many things, and is not particularly simple to understand or describe, so
-I recommend going by example.
+The configuration of this tool is done in JSON, which contains handlers
+for requests and/or responses by path/endpoint. The JSON file is provided as
+an argument when starting the proxy. It is automatically reloaded when its
+modification time changes, i.e., you can edit it while the proxy is running
+without interrupting operations.
 
 The configuration file is a JSON file containing a single dictionary (map)
 object. The two main top-level keys are `request` and `response`, which
@@ -160,7 +161,7 @@ respectively, e.g.:
     "request":{
         "/file":{
             "respond":{
-                "content": "./example.json"
+                "content": "./config/example.json"
             }
         },
         "*":{
@@ -172,7 +173,7 @@ respectively, e.g.:
             "status": 404,
             "replace":{
                 "status": 200,
-                "content": "./example.json"
+                "content": "./config/example.json"
             }
         },
         "*":{
@@ -184,6 +185,9 @@ respectively, e.g.:
     }
 }
 ```
+
+The included [example configuration](config/example.json) contains many more
+examples of things that are possible with this tool.
 
 ### Path Handlers
 
@@ -492,7 +496,7 @@ Examples of request handlers:
     },
     "/file":{
       "respond":{
-        "content": "./example.json"
+        "content": "./config/example.json"
       }
     },
     "/object":{
