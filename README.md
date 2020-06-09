@@ -285,6 +285,7 @@ for matching:
 
 * `scheme` – the URL scheme (`http` or `https`)
 * `host` – the server hostname (e.g., `api.server.com`)
+* `method` – the HTTP method (e.g., `GET`)
 * `path` – the path string, including query and fragments (e.g., `/search?q=foo`)
 * `query` – the query parsed into a dictionary (e.g., `{ "q": "foo" }`)
 * `request` – the request body content
@@ -451,13 +452,15 @@ The following actions are available only in request handlers:
 
 * `respond` – respond with the specified response (`status`, `content`, `type`,
   `headers`) instead of requesting it from the remote server
+* `modify` – a modifier dictionary containing replacement keys for the request
+  (the same values are allowed as in request matching)
 
 The following actions are available only in response handlers:
 
 * `replace` – replaces the response with the contents of the replace
   dictionary (similar to the `respond` dictionary of request handlers)
-* `modify` – a modifier dictionary, or an array thereof, applied
-  in order (see below)
+* `modify` – a modifier dictionary or an array of modifiers, applied in order
+  (see below)
 
 #### Mocking Responses
 
@@ -512,17 +515,19 @@ Examples of request handlers:
 }
 ```
 
-#### Modifying Responses
+#### Modifying Content
 
-It is possible to modify the response from the remote server by
-using either a `replace` or `modify` key in a response handler.
+It is possible to modify the request or response content by using a `replace`
+or `modify` key in a response handler, or a `content` key inside a request
+`modify` dictionary. The format of the latter is the same as the `modify`
+for `response`.
 
 To **replace** a response entirely, specify the new response inside
 the `replace` dictionary.
 
-To **modify** content, the value of `modify` is either a dictionary
-or an array of such dictionaries, processed in order, with the
-following keys each:
+To **modify** content, the value of `modify` (response) or `modify["content"]`
+(request) is either a dictionary or an array of such dictionaries,
+processed in order, with the following keys each:
 
 * `replace` – perform selective replacement of content (in contrast to
   the aforementioned top level `replace` which replaces the entire
@@ -546,6 +551,13 @@ The `modify` `replace` can be of the following formats:
 * an array with two strings as elements: the first string is treated
   as a regular expression, and all occurrences of it in the content
   are substituted by the second string
+
+The regular expression substituon strings of the last two cases may contain
+group references, e.g., `|ba[rz]|Ba\\1` would uppercase the `b` in both
+`bar` and `baz`, but not in `bat`.
+
+Note that response handlers can have a top-level `replace`, i.e., not nested
+inside `modify`, which is different in that it replaces the response entirely.
 
 ##### Delete
 

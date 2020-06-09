@@ -153,6 +153,7 @@
     "/google":{
       "modify":{
         "host": "www.google.com",
+        "method": "GET",
         "path": "/",
         "query":{ "q": "mitmproxy" },
         "content":{
@@ -173,6 +174,7 @@
   "response":{
     "/nonexistent":{
       "status": 404,
+      "method": [ "GET", "PATCH" ],
       "replace":{
         "status": 200,
         "content": "./config/example.json",
@@ -190,7 +192,6 @@
         "Content-Type": "~/json"
       },
       "modify":[
-        "|bar|BAR",
         {
           "merge":{
             "mock": "inserted item",
@@ -198,6 +199,9 @@
             "array":[ { "id": 666, "note": "added element", "foo": false } ],
             "inserted_array":[]
           }
+        },
+        {
+          "replace": [ "\\bb(a[rz])", "B\\1" ]
         },
         {
           "delete":{

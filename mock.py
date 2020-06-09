@@ -108,6 +108,9 @@ def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
     required_scheme = config.get("scheme", mock_config.get("scheme"))
     if required_scheme and not matches_value_or_list(request.scheme, required_scheme):
         return False
+    required_method = config.get("method")
+    if required_method and not matches_value_or_list(request.method, required_method):
+        return False
     required_path = config.get("path")
     if required_path and not matches_value_or_list(request.path, required_path):
         return False
@@ -640,9 +643,9 @@ def resolve_config(flow: http.HTTPFlow, event: str) -> Optional[dict]:
         if msg is True:
             msg = "Log"
         if is_request:
-            ctx.log.info("{}: {}: {}".format(msg, event, flow.request))
+            ctx.log.info("{}: {}".format(msg, flow.request))
         else:
-            ctx.log.info("{}: {}: {} -> {}".format(msg, event, flow.request, flow.response))
+            ctx.log.info("{}: {} -> {}".format(msg, flow.request, flow.response))
     return config
 
 # Called for every incoming request, before passing anything to the remote
@@ -663,6 +666,7 @@ def request(flow: http.HTTPFlow) -> None:
         flow.request.scheme = modify.get("scheme", flow.request.scheme)
         flow.request.host = modify.get("host", flow.request.host)
         flow.request.path = modify.get("path", flow.request.path)
+        flow.request.method = modify.get("method", flow.request.method)
         query_modifier = modify.get("query")
         if query_modifier:
             query = flow.request.query or {}
