@@ -84,9 +84,11 @@ def matches_value_or_list(value, allow) -> bool:
             return value == allow
     elif isinstance(allow, dict):
         return allow.get(value, False)
+    elif isinstance(allow, str):
+        return allow == str(value)
     else:
         for allowed in allow:
-            if matches_value_or_list(str, allowed):
+            if matches_value_or_list(value, allowed):
                 return True
     return False
 
