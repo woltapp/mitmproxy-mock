@@ -98,9 +98,11 @@ def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
 
     - `host` (some patterns supported, see `host_matches`)
     - `scheme` (exact match or list)
+    – `method` (exact match or list)
     - `path` (exact match or list, normally matched already before coming here)
     - `query` (keys are exact, values either exact or list)
     – `request` (the content of the request body)
+    – `require` (dictionary from variable names to required values)
     """
     if not config:
         return False
@@ -126,6 +128,17 @@ def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
     required_content = config.get("request")
     if required_content and not content_matches(request.text, required_content):
         return False
+    required_state = config.get("require")
+    if required_state:
+        if isinstance(required_state, dict):
+            for variable, required_value in required_state.items():
+                value = mock_state.get(variable, "")
+                if not matches_value_or_list(value, required_value):
+                    return False
+        else:
+            variable = config.get("variable", request.path.split("?")[0])
+            if not matches_value_or_list(mock_state.get(variable, ""), required_state):
+                return False
     return True
 
 def is_subset(subset, superset) -> bool:
@@ -493,19 +506,21 @@ def load_config_file(mock_filename: str) -> None:
     """
     Loads the configuration file `mock_filename`, replacing the global config.
     """
-    global mock_config, re_request, re_response
+    global mock_config, re_request, re_response, mock_state
     global hit_count, cycle_index, config_modified_at
     ctx.log.info("Loading mock configuration {}".format(mock_filename))
     try:
         with open(mock_filename) as mock_config_file:
             # OrderedDict hack to preserve path regex order
-            ordered_config = json.load(mock_config_file, object_pairs_hook=OrderedDict)
-            mock_config = json.loads(json.dumps(ordered_config))
             config_modified_at = os.path.getmtime(mock_filename)
+            ordered_config = json.load(mock_config_file, object_pairs_hook=OrderedDict)
+            request_re_paths = extract_regex_paths(ordered_config.get("request"))
+            response_re_paths = extract_regex_paths(ordered_config.get("response"))
+            mock_config = json.loads(json.dumps(ordered_config))
+            re_request, re_response = request_re_paths, response_re_paths
             hit_count.clear()
             cycle_index.clear()
-            re_request = extract_regex_paths(ordered_config.get("request"))
-            re_response = extract_regex_paths(ordered_config.get("response"))
+            mock_state.clear()
     except Exception as error:
         ctx.log.error("Error: {}: {}".format(mock_filename, error))
     if not mock_config:
@@ -524,9 +539,9 @@ def reload_config_if_updated(mock_filename: Optional[str] = None) -> None:
     except Exception as error:
         ctx.log.error("Error: {}: {}".format(mock_filename, error))
 
-def count_based_config(path, count_config: dict) -> dict:
+def count_based_config(path: str, count_config: dict) -> dict:
     """
-    Returns`count_config` reduced to the merged configuration for this
+    Returns `count_config` reduced to the merged configuration for this
     iteration based on the number of times `path` has been hit.
 
     The configuration dictionary is formed from these keys applied
@@ -553,12 +568,50 @@ def count_based_config(path, count_config: dict) -> dict:
         result.update(specific_config or {})
     return result
 
+def state_based_config(variable: str, state_config: dict) -> dict:
+    """
+    Returns `state_config` reduced to the merged configuration for this value
+    of `variable` in the global `mock_state`.
+
+    - `*`: applied to every state
+    - the exact value of `variable`
+    - `~` applied in case the exact value is not found
+    """
+    global mock_state
+    result = {}
+    result.update(state_config.get("*", {}))
+    value = mock_state.get(variable, "")
+    if value in state_config:
+        result.update(state_config.get(value, {}))
+    else:
+        result.update(state_config.get("~", {}))
+    return result
+
 def resolve_config_state(path: str, config: dict, is_copy: bool = False) -> dict:
     """
     Returns a copy of `config` after all stateful handlers have been resolved
-    to the current state.
+    to the current state. The stateful handlers are:
+
+    - `set` – dictionary from variable name to value, set globally
+    - `once` – handler executed only once, shares the count with `count`
+    - `count` – visit-count based handler
+    - `cycle` – array of handlers, chosen in sequence with wrap-around
+    - `random` – an array of handlers, a random one is chosen every time
+    - `state` – a dictionary with the key `variable` for a variable name,
+      and different handlers keyed by values of that variable
     """
-    global cycle_index
+    global cycle_index, mock_state
+    if "set" in config:
+        if not is_copy:
+            config, is_copy = {**config}, True
+        set_config = config.pop("set")
+        if set_config:
+            if isinstance(set_config, dict):
+                for variable, value in set_config.items():
+                    mock_state[variable] = value
+            else:
+                variable = config.get("variable", path)
+                mock_state[variable] = set_config
     if "once" in config:
         if not is_copy:
             config, is_copy = {**config}, True
@@ -589,6 +642,14 @@ def resolve_config_state(path: str, config: dict, is_copy: bool = False) -> dict
         random_configs = config.pop("random")
         if random_configs:
             config.update(random.choice(random_configs))
+            return resolve_config_state(path, config, is_copy)
+    if "state" in config:
+        if not is_copy:
+            config, is_copy = {**config}, True
+        state_config = config.pop("state")
+        if state_config:
+            variable = state_config.get("variable", config.get("variable", path))
+            config.update(state_based_config(variable, state_config))
             return resolve_config_state(path, config, is_copy)
     return config
 
@@ -650,6 +711,10 @@ def resolve_config(flow: http.HTTPFlow, event: str) -> Optional[dict]:
             ctx.log.info("{}: {} -> {}".format(msg, flow.request, flow.response))
     return config
 
+def save_flow(save, flow: http.HTTPFlow, event: str) -> None:
+    # TODO: Save to file(s) according to `save` definition
+    pass
+
 # Called for every incoming request, before passing anything to the remote
 # server. Handling requests allows mocking data for endpoints not present
 # on remote, or modifying the outgoing request.
@@ -662,6 +727,9 @@ def request(flow: http.HTTPFlow) -> None:
     if required_headers and not content_matches(dict(flow.request.headers), required_headers):
         return
     ctx.log.debug("Match request {}: {}".format(flow.request.path, config))
+    save = config.get("save", mock_config.get("save"))
+    if save:
+        save_flow(save, flow, "request")
     modify = config.get("modify")
     if modify:
         ctx.log.debug("Modify request: {} -> {}".format(flow.request, modify))
@@ -701,6 +769,9 @@ def response(flow: http.HTTPFlow) -> None:
         if not content_matches(headers, required_headers):
             return
     ctx.log.debug("Match response {}: {}".format(flow.request.path, config))
+    save = config.get("save", mock_config.get("save"))
+    if save:
+        save_flow(save, flow, "response")
     replace = config.get("replace")
     if replace:
         response = replace.get("response", replace)
@@ -730,6 +801,9 @@ def configure(updated) -> None:
 
 # The global configuration.
 mock_config = {}
+
+# The global state (can be set and matched by rules).
+mock_state = {}
 
 # Compiled regular expressions indexed by string.
 re_cache = {}

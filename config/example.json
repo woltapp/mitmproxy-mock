@@ -37,7 +37,7 @@
     },
     "/pass":{
       "pass": true,
-      "respond": "<blink>This text won't be seen, pass forwards to server</blink>"
+      "respond": "<blink>This text won't be seen, pass to server</blink>"
     },
     "/sequence":{
       "count":{
@@ -81,6 +81,43 @@
         }
       }
     },
+    "/set":[
+      {
+        "query": { "flag": "~^(1|true|set)$" },
+        "respond": "<body><h1>Flag set</h1></body>",
+        "set":{ "myflag": "1" }
+      },
+      {
+        "query": { "flag": "~^(0|false|clear)$" },
+        "respond": "<body><h1>Flag cleared</h1></body>",
+        "set":{ "myflag": "0" }
+      },
+      {
+        "query": { "flag": "toggle" },
+        "require": { "myflag": "1" },
+        "set":{ "myflag": "0" },
+        "respond": "<body><h1>Flag cleared (toggle)</h1></body>"
+      },
+      {
+        "query": { "flag": "toggle" },
+        "set":{ "myflag": "1" },
+        "respond": "<body><h1>Flag set (toggle)</h1></body>"
+      },
+      {
+        "respond":{
+          "status": 400,
+          "content": "<body><h1>400 – Bad Request</h1><p>Usage: <code>/set?flag=(0|1|toggle)</code></p></body>"
+        }
+      }
+    ],
+    "/get":{
+      "state":{
+        "variable": "myflag",
+        "1":{ "respond": "<body><h1>The flag is set</h1></body>" },
+        "0":{ "respond": "<body><h1>The flag is cleared</h1></body>" },
+        "~":{ "respond": "<body><h1>The flag is undefined</h1></body>" }
+      }
+    },
     "/flip":{
       "random":[
         { "respond": "<body><h1>Heads</h1></body>" },
@@ -95,31 +132,12 @@
             "status": 500,
             "content": "<h1>500 - Random Error</h1>"
           },
-          "pass": false
+          "pass": false,
+          "log": "random failure"
         }
       ],
       "pass": true
     },
-    "/foo":[
-      {
-        "query": { "q": "~^foo(ba[rz])*$" },
-        "count":{
-          "id":"foo_caps",
-          "1":{ "respond": "<body><h1>FOO</h1></body>" },
-          "2":{ "respond": "<body><h1>BAR</h1></body>" },
-          "3":{ "respond": "<body><h1>BAZ</h1></body>" },
-          "*":{ "respond": "<body><h1>FOOBAR</h1></body>" }
-        }
-      },
-      {
-        "count":{
-          "1":{ "respond": "<body><h1>Foo</h1></body>" },
-          "2":{ "respond": "<body><h1>Bar</h1></body>" },
-          "3":{ "respond": "<body><h1>Baz</h1></body>" },
-          "*":{ "respond": "<body><h1>Foobar</h1></body>" }
-        }
-      }
-    ],
     "/nested":{
       "cycle":[
         {

@@ -12,7 +12,7 @@ to use this tool. Among other things, it can do:
 
 * mocking responses for endpoints not yet implemented on the backend
 * reproducing specific flows, including error responses; one-shot,
-multi-stage, cyclic, and randomly selected actions are supported
+multi-stage, state machine, cyclic, and randomly selected actions are supported
 * matching specific responses from the real backend and modifying their
 contents (e.g., insert new data into an existing response)
 * logging occurrences of specific requests or responses
@@ -290,6 +290,8 @@ for matching:
 * `query` – the query parsed into a dictionary (e.g., `{ "q": "foo" }`)
 * `request` – the request body content
 * `headers` – the HTTP headers as a dictionary (e.g., `{ "User-Agent": "…" }`)
+* `require` – required values for global variables, which can be set by the
+  the `set` action (e.g., `{ "myflag": "1" }`)
 
 For response handlers, the following additional keys are available:
 
@@ -318,7 +320,7 @@ following matches any of the three hostnames:
 "*":{
     "host":[
         "api.server.com",
-        "beta.server.com",
+        ".beta.server.com",
         "api.staging.com"
     ]
 }
@@ -409,9 +411,14 @@ A number of "stateful" path handlers are available:
   is to be used with multiple paths)
 * `random` – an array of handlers from which one is chosen at random
   each time it is evaluated
+* `state` – a dictionary containing the key `variable` with the name of the
+  variable (settable with the `set` action) as value, and handlers for
+  different cases with the value of that variable as key
 
 These handlers allow simulating flows of responses on the same endpoint,
 e.g., a sequence of events, a one-time or randomly occurring error, etc.
+Note that stateful handlers can not add any further matching, because they are
+evaluated only after a match has already been found.
 
 For example, the following request handler passes any request through to
 the remote server three out of for times at random, but produces a specific
@@ -440,10 +447,62 @@ across different paths matching the same regular expression. You can specify
 `id` inside the `count` dictionary, or `cycle-id` alongside `cycle`, to
 override this.
 
+#### Variables
+
+There is a global dictionary of variables that may be set with the `set`
+action, tested for with the `require` condition, and handled case-by-case
+with `state`. All variables default to the empty string.
+
+For example, a pair of `/get` and `/set` request handlers:
+
+``` json
+"/set":[
+  {
+    "query": { "flag": "1" },
+    "respond": "<body><h1>Flag set</h1></body>",
+    "set":{ "myflag": "1" }
+  },
+  {
+    "query": { "flag": "0" },
+    "respond": "<body><h1>Flag cleared</h1></body>",
+    "set":{ "myflag": "0" }
+  },
+  {
+    "query": { "flag": "toggle" },
+    "require": { "myflag": "1" },
+    "set":{ "myflag": "0" },
+    "respond": "<body><h1>Flag cleared (toggle)</h1></body>"
+  },
+  {
+    "query": { "flag": "toggle" },
+    "set":{ "myflag": "1" },
+    "respond": "<body><h1>Flag set (toggle)</h1></body>"
+  },
+  {
+    "respond":{
+      "status": 400,
+      "content": "<body><h1>400</h1><p>Usage: <code>/set?flag=(0|1|toggle)</code></p></body>"
+    }
+  }
+],
+"/get":{
+  "state":{
+    "variable": "myflag",
+    "1":{ "respond": "<body><h1>The flag is set</h1></body>" },
+    "0":{ "respond": "<body><h1>The flag is cleared</h1></body>" },
+    "":{ "respond": "<body><h1>The flag is undefined</h1></body>" }
+  }
+}
+```
+
 ### Actions
 
 The following actions are available in both response and request handlers:
 
+* `set` – a dictionary, sets the variables given as keys to the given values,
+  which can be tested for in the `require` matcher and `state` handler (note
+  that `set` takes effect immediately after matching, even if `pass` causes
+  other handlers to be skipped)
 * `pass` – skips any further actions and passes the request or response
   through
 * `log` – logs the contents of the request or response
