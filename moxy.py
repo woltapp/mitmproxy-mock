@@ -18,7 +18,7 @@ import os
 import random
 import re
 from collections import OrderedDict
-from typing import Optional
+from typing import Optional, Tuple, Union
 from mitmproxy import http
 from mitmproxy import ctx
 from mitmproxy import net
@@ -47,7 +47,7 @@ def host_matches(host: str, allow) -> bool:
         else:
             return host == allow
     elif isinstance(allow, dict):
-        return allow.get(host, False)
+        return bool(allow.get(host, False))
     elif allow is None:
         return True
     else:
@@ -107,7 +107,7 @@ def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
     if not config:
         return False
     host_whitelist = config.get("host", mock_config.get("host"))
-    if not host_matches(request.host, host_whitelist):
+    if not host_matches(str(request.host), host_whitelist):
         return False
     required_scheme = config.get("scheme", mock_config.get("scheme"))
     if required_scheme and not matches_value_or_list(request.scheme, required_scheme):
@@ -167,7 +167,7 @@ def is_subset(subset, superset) -> bool:
         ctx.log.debug("is_subset incompatible types: {}: {} {}".format(error, subset, superset))
         return False
 
-def content_matches(content_str: Optional[str], allow, content_object = None) -> bool:
+def content_matches(content_str: Optional[str], allow: Union[str,list,dict], content_object: Optional[Union[dict,list]] = None) -> bool:
     """
     Returns whether `content` matches the `allow` criteria.
 
@@ -204,7 +204,7 @@ def content_matches(content_str: Optional[str], allow, content_object = None) ->
             return False
     return True
 
-def response_matches_config(response: http.HTTPResponse, config: dict) -> bool:
+def response_matches_config(response: Optional[http.HTTPResponse], config: dict) -> bool:
     """
     Returns whether `response` is matched by `config`. This checks the following:
 
@@ -215,6 +215,8 @@ def response_matches_config(response: http.HTTPResponse, config: dict) -> bool:
     For content matching, each string can either be a regular expression denoted
     by a tilde prefix (`~`), otherwise a substring that must be found exactly.
     """
+    if not response:
+        return False
     required_status = config.get("status")
     if required_status and not matches_value_or_list(response.status_code, required_status):
         return False
@@ -354,7 +356,7 @@ def content_as_object(content):
             content = {}
     return content
 
-def replace_in_content(replace, content):
+def replace_in_content(replace: Union[str,list,dict], content):
     """
     Performs replacement `replace` (dict update or regex sub) in `content`.
     """
@@ -378,7 +380,7 @@ def replace_in_content(replace, content):
             ctx.log.error("Invalid JSON: {}: after replace: {}".format(error, replace))
     return content
 
-def modify_content(modify, content):
+def modify_content(modify: Union[str,list,dict], content):
     """
     Returns `content` modified according to all elements of `modify`.
     """
@@ -421,7 +423,7 @@ def modify_content(modify, content):
                 ctx.log.info("Error modifying with {}: {}".format(modification, error))
     return content
 
-def encode_content(content) -> (bytes, str):
+def encode_content(content: Union[str,list,dict]) -> Tuple[bytes, str]:
     """
     Return a tuple of `content` encoded into bytes, and a guess of its type.
 
@@ -451,7 +453,7 @@ def encode_content(content) -> (bytes, str):
                 content_type = "text/html"
     return content_as_str(content).encode("utf-8"), content_type + "; charset=utf-8"
 
-def make_response(response, status, content, headers) -> http.HTTPResponse:
+def make_response(response: Union[str,dict], status, content, headers) -> http.HTTPResponse:
     """
     Return a new `HTTPResponse` object constructed from the configuration
     `response`, with the status code, content and headers defaulting to the
@@ -474,7 +476,9 @@ def make_response(response, status, content, headers) -> http.HTTPResponse:
     if charset and not ((";" in content_type) or ("image" in content_type)):
         content_type = "{}; charset={}".format(content_type, charset)
     headers = {**headers, **{ "Content-Type": content_type }}
-    headers.update(response.get("headers", {}))
+    merge_headers = response.get("headers", {})
+    if isinstance(merge_headers, dict):
+        headers.update(merge_headers)
     status = response.get("status", status)
     ctx.log.debug("Response {}: headers={} content={}".format(status, headers, content))
     return http.HTTPResponse.wrap(
@@ -532,7 +536,7 @@ def reload_config_if_updated(mock_filename: Optional[str] = None) -> None:
     """
     try:
         if not mock_filename:
-            mock_filename = ctx.options.mock
+            mock_filename = str(ctx.options.mock)
         timestamp = os.path.getmtime(mock_filename)
         if timestamp != config_modified_at:
             load_config_file(mock_filename)
@@ -724,7 +728,7 @@ def request(flow: http.HTTPFlow) -> None:
     if config is None:
         return
     required_headers = config.get("headers")
-    if required_headers and not content_matches(dict(flow.request.headers), required_headers):
+    if required_headers and not content_matches(None, required_headers, dict(flow.request.headers)):
         return
     ctx.log.debug("Match request {}: {}".format(flow.request.path, config))
     save = config.get("save", mock_config.get("save"))
@@ -766,7 +770,7 @@ def response(flow: http.HTTPFlow) -> None:
     required_headers = config.get("headers")
     if required_headers:
         headers = {**dict(flow.request.headers), **dict(flow.response.headers)}
-        if not content_matches(headers, required_headers):
+        if not content_matches(None, required_headers, headers):
             return
     ctx.log.debug("Match response {}: {}".format(flow.request.path, config))
     save = config.get("save", mock_config.get("save"))
