@@ -421,7 +421,7 @@ Note that stateful handlers can not add any further matching, because they are
 evaluated only after a match has already been found.
 
 For example, the following request handler passes any request through to
-the remote server three out of for times at random, but produces a specific
+the remote server three out of four times at random, but produces a specific
 error code with a one in four probability:
 
 ``` json
@@ -611,7 +611,7 @@ The `modify` `replace` can be of the following formats:
   as a regular expression, and all occurrences of it in the content
   are substituted by the second string
 
-The regular expression substituon strings of the last two cases may contain
+The regular expression substitution strings of the last two cases may contain
 group references, e.g., `|ba[rz]|Ba\\1` would uppercase the `b` in both
 `bar` and `baz`, but not in `bat`.
 
@@ -624,7 +624,7 @@ The `modify` `delete` can be any nested JSON object. Any matching
 key, element, or value is deleted from content. The match need not be
 exact, i.e., as for content matching, it suffices to be a subset of
 `content`. The empty dictionary `{}` can be used to match any value,
-e.g., the following delete the key `foo` regardless of its value:
+e.g., the following deletes the key `foo` regardless of its value:
 
 ``` json
 "delete":{
@@ -688,7 +688,7 @@ The `where` dictionary may contain the following keys:
   in the array matching the `where` object
 * `merge` – an object that is merged (only) with elements in the array
   matching the `where` object
-* `move` – a string, either `head` or `tail`, which causes the any elements
+* `move` – a string, either `head` or `tail`, which causes any elements
   matching `where` to be moved to the head (beginning) or the tail (end) of
   the array, respectively
 * `forall` – a boolean, if `true` (the default), the modifications are
