@@ -736,6 +736,7 @@ For example:
 
 * [Kimmo Kulovesi](https://github.com/arkku) – original design and implementation
 * [Scott Lyttle](https://github.com/scottlyttle) – the name "Moxy"
+* [Max Kovalev](https://github.com/0neel) – fix for obsolete `wrap` function call
 
 ## License and Copyright
 
