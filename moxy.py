@@ -481,9 +481,7 @@ def make_response(response: Union[str,dict], status, content, headers) -> http.H
         headers.update(merge_headers)
     status = response.get("status", status)
     ctx.log.debug("Response {}: headers={} content={}".format(status, headers, content))
-    return http.HTTPResponse.wrap(
-        net.http.Response.make(status, content, headers),
-    )
+    return net.http.Response.make(status, content, headers)
 
 def extract_regex_paths(config: OrderedDict) -> OrderedDict:
     """
