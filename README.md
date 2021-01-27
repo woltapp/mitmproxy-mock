@@ -518,6 +518,9 @@ The following actions are available only in response handlers:
 
 * `replace` – replaces the response with the contents of the replace
   dictionary (similar to the `respond` dictionary of request handlers)
+* `replace_lambda` – replaces the response with the values returned by the
+  lambda functions defined in the replace_lambda dictionary (similar to the
+  `respond` dictionary of request handlers)
 * `modify` – a modifier dictionary or an array of modifiers, applied in order
   (see below)
 
@@ -528,8 +531,8 @@ the remote server. This allows simulating events and endpoints that do
 do not exist or would be hard to reproduce on backend.
 
 The `respond` key on a request handler causes a response to be sent, and
-likewise the `replace` key on a response handler causes the original
-response to be replaced with the specified one.
+likewise the `replace` and `replace_lambda` keys on a response handler causes
+the original response to be replaced with the specified one.
 
 The keys for constructing a response are:
 
@@ -544,6 +547,10 @@ The keys for constructing a response are:
 
 If the `respond` or `replace` is in itself a string, that string is
 interpreted as though it were the value of `content` inside a dictionary.
+If `replace_lambda` is in itself a string, that string is interpreted as
+though it were a lambda function that consumes the value of `content` as
+an argument, with its output then treated as the value of `content` inside
+a dictionary.
 
 Examples of request handlers:
 
@@ -576,10 +583,10 @@ Examples of request handlers:
 
 #### Modifying Content
 
-It is possible to modify the request or response content by using a `replace`
-or `modify` key in a response handler, or a `content` key inside a request
-`modify` dictionary. The format of the latter is the same as the `modify`
-for `response`.
+It is possible to modify the request or response content by using a `replace`,
+`replace_lambda`, or `modify` key in a response handler, or a `content` key
+inside a request `modify` dictionary. The format of the latter is the same as
+the `modify` for `response`.
 
 To **replace** a response entirely, specify the new response inside
 the `replace` dictionary.
@@ -591,6 +598,7 @@ processed in order, with the following keys each:
 * `replace` – perform selective replacement of content (in contrast to
   the aforementioned top level `replace` which replaces the entire
   response)
+* `replace_lambda` – perform selective replacement of content
 * `delete` – selectively delete content
 * `merge` – merge (add/insert/override) content
 
@@ -617,6 +625,27 @@ group references, e.g., `|ba[rz]|Ba\\1` would uppercase the `b` in both
 
 Note that response handlers can have a top-level `replace`, i.e., not nested
 inside `modify`, which is different in that it replaces the response entirely.
+
+##### Replace Using Lambda Function Output
+
+The `modify` `replace_lambda` can be of the following formats:
+
+* a string treated as a lambda function, which the content is passed
+  to as an argument
+* a dictionary: the response content is interpreted as a dictionary,
+  and merged with the output from `replace_lambda` lambda functions
+  (represented as strings) non-recursively such that any colliding keys
+  are taken from the output of lambda functions from `replace_lambda`
+  with the corresponding keys from response content (if any) passed as
+  arguments
+* an array with two strings as elements: the first string is treated
+  as a regular expression, and all occurrences of it in the content
+  are passed as an argument to the second string, which is treated as a
+  lambda function
+
+The regular expression substitution strings of the last case may contain
+group references, e.g., `[ "\\bb(a[rz])", "lambda m: 'B' + m.group(1)" ]`
+would uppercase the `b` in both `bar` and `baz`, but not in `bat`.
 
 ##### Delete
 
