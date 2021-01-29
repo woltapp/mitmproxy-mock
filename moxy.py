@@ -17,11 +17,11 @@ import json
 import os
 import random
 import re
+from types import LambdaType
 from collections import OrderedDict
 from typing import Optional, Tuple, Union
 from mitmproxy import http
 from mitmproxy import ctx
-from mitmproxy import net
 
 def host_matches(host: str, allow) -> bool:
     """
@@ -380,6 +380,89 @@ def replace_in_content(replace: Union[str,list,dict], content):
             ctx.log.error("Invalid JSON: {}: after replace: {}".format(error, replace))
     return content
 
+def lambda_with_args(lambda_func: str, index: int):
+    """
+    Given a string representation of a lambda function and the corresponding code
+    block delimiter index, returns `lambda_func` as a string representing a lambda
+    function, inserting an optional argument if necessary.
+    """
+    return re.sub("^\\s*lambda\\s*$", "lambda _", lambda_func[:index]) + lambda_func[index:]
+
+def compiled_co_for(src_str: str):
+    """
+    Returns a compiled code object for the string `src_str`.
+    The compiled code objects are cached in memory.
+    """
+    global co_cache
+    result = co_cache.get(src_str)
+    if result is None:
+        result = compile(src_str, "<string>", "eval")
+        co_cache[src_str] = result
+    return result
+
+def str_as_lambda(lambda_func: str):
+    """
+    Returns `lambda_func` as a lambda function, if possible.
+    """
+    index = lambda_func.find(":")
+    if index != -1:
+        lambda_func = lambda_with_args(lambda_func, index)
+        try:
+            code_object = compiled_co_for(lambda_func)
+            if code_object.co_consts[1] == "<lambda>":
+                lambda_func = eval(lambda_func)
+                if isinstance(lambda_func, LambdaType) and lambda_func.__name__ == "<lambda>":
+                    return lambda_func
+        except Exception:
+            pass
+    return None
+
+def replace_lambda_in_dict(replace_lambda: dict, dictionary):
+    """
+    For each value in `replace_lambda`, performs corresponding replacement (dict
+    update) in `dictionary`.
+    """
+    for key in replace_lambda:
+        replace_lambda_value = replace_lambda[key]
+        if isinstance(replace_lambda_value, dict):
+            dictionary[key] = replace_lambda_in_dict(replace_lambda_value, dictionary.get(key, {}))
+        else:
+            replace_lambda_value = str_as_lambda(replace_lambda_value)
+            if replace_lambda_value:
+                try:
+                    dictionary[key] = replace_lambda_value(dictionary.get(key, ""))
+                except Exception:
+                    pass
+    return dictionary
+
+def replace_lambda_in_content(replace_lambda: Union[dict,str,list], content):
+    """
+    Performs replacement `replace_lambda` (dict update or regex sub) in `content`.
+    """
+    if isinstance(replace_lambda, dict):
+        content = replace_lambda_in_dict(replace_lambda, content_as_object(content) or {})
+    elif replace_lambda:
+        if isinstance(replace_lambda, str):
+            replace_lambda = str_as_lambda(replace_lambda)
+            if replace_lambda:
+                try:
+                    content = replace_lambda(content)
+                except ValueError as error:
+                    ctx.log.error("Invalid JSON: {}: after replace: {}".format(error, replace_lambda))
+                except Exception:
+                    pass
+        else:
+            sub_re, replacement = compiled_re_for(replace_lambda[0]), replace_lambda[1]
+            replacement = str_as_lambda(replacement)
+            if replacement:
+                try:
+                    content = sub_re.sub(replacement, content_as_str(content))
+                except ValueError as error:
+                    ctx.log.error("Invalid JSON: {}: after replace: {}".format(error, replace_lambda))
+                except Exception:
+                    pass
+    return content
+
 def modify_content(modify: Union[str,list,dict], content):
     """
     Returns `content` modified according to all elements of `modify`.
@@ -390,6 +473,7 @@ def modify_content(modify: Union[str,list,dict], content):
         if isinstance(modification, dict):
             delete = modification.get("delete")
             replace = modification.get("replace")
+            replace_lambda = modification.get("replace_lambda")
             merge = modification.get("merge")
             if delete:
                 content = delete_content(delete, content_as_object(content))
@@ -408,6 +492,8 @@ def modify_content(modify: Union[str,list,dict], content):
                     content = replace
                 else:
                     content = replace_in_content(replace, content)
+            if replace_lambda:
+                content = replace_lambda_in_content(replace_lambda, content)
             if merge:
                 if isinstance(merge, str):
                     with open(merge) as merge_file:
@@ -430,8 +516,10 @@ def encode_content(content: Union[str,list,dict]) -> Tuple[bytes, str]:
     `content` may be any of the following:
     - A file name string, in which case the content is loaded from the file and
       type inferred from the file's extension (json, js, html, xml, txt, md).
-    - A raw string, in which case it is encoded according as UTF-8, and the type
+    - A raw string, in which case it is encoded accordingly as UTF-8, and the type
       is inferred to be HTML if it starts with a `<`, otherwise JSON.
+    - A byte string, in which case it is assumed to be encoded as UTF-8, and the
+      type is inferred to be HTML if it starts with a `<`, otherwise JSON.
     - An object (such as a dictionary) that can be dumped as JSON, in which case
       it is converted to JSON.
     """
@@ -449,9 +537,11 @@ def encode_content(content: Union[str,list,dict]) -> Tuple[bytes, str]:
                     content_type = "application/javascript"
                 return content_file.read(), content_type
         except FileNotFoundError:
-            if content.startswith("<"):
-                content_type = "text/html"
-    return content_as_str(content).encode("utf-8"), content_type + "; charset=utf-8"
+            pass
+    content = content_as_str(content)
+    if content.startswith("<"):
+        content_type = "text/html"
+    return content.encode("utf-8"), content_type + "; charset=utf-8"
 
 def make_response(response: Union[str,dict], status, content, headers) -> http.HTTPResponse:
     """
@@ -460,7 +550,7 @@ def make_response(response: Union[str,dict], status, content, headers) -> http.H
     given values unless overridden by `response`.
 
     `response` may contain any combination of:
-     - `content`: A file name, a raw string, or a JSON object
+     - `content`: A file name, a raw string, a byte string, or a JSON object
      - `status`: The HTTP status code
      - `type`: The Content-Type header type with or without the charset
      - `charset`: The charset part of the Content-Type header
@@ -480,6 +570,65 @@ def make_response(response: Union[str,dict], status, content, headers) -> http.H
     if isinstance(merge_headers, dict):
         headers.update(merge_headers)
     status = response.get("status", status)
+    ctx.log.debug("Response {}: headers={} content={}".format(status, headers, content))
+    return http.HTTPResponse.make(status, content, headers)
+
+def make_response_lambda(response: Union[str,dict], status, content, headers) -> http.HTTPResponse:
+    """
+    Return a new `HTTPResponse` object constructed from the configuration
+    `response`, with the status code, content and headers defaulting to the
+    given values unless overridden by `response`.
+
+    `response` may contain any combination of:
+     - `content`: A file name, a raw string, a byte string, or a JSON object
+     - `status`: The HTTP status code
+     - `type`: The Content-Type header type with or without the charset
+     - `charset`: The charset part of the Content-Type header
+     - `headers`: A dictionary of HTTP headers
+
+    See also: `encode_content`
+    """
+    if isinstance(response, str):
+        response_lambda = response
+        response = { "content": content }
+    else:
+        response_lambda = response.get("content", "lambda s: s")
+    content, content_type = encode_content(content)
+    response_lambda = str_as_lambda(response_lambda)
+    if response_lambda:
+        try:
+            content, content_type = encode_content(response_lambda(content_as_str(content)))
+        except Exception:
+            pass
+    response_lambda = response.get("type", "lambda s: s")
+    content_type = headers.get("Content-Type", content_type)
+    response_lambda = str_as_lambda(response_lambda)
+    if response_lambda:
+        try:
+            content_type = response_lambda(content_type)
+        except Exception:
+            pass
+    response_lambda = response.get("charset", "lambda s: s")
+    charset = mock_config.get("charset", "utf-8")
+    response_lambda = str_as_lambda(response_lambda)
+    if response_lambda:
+        try:
+            charset = response_lambda(charset)
+        except Exception:
+            pass
+    if charset and not ((";" in content_type) or ("image" in content_type)):
+        content_type = "{}; charset={}".format(content_type, charset)
+    headers = {**headers, **{ "Content-Type": content_type }}
+    response_lambda = response.get("headers", {})
+    if isinstance(response_lambda, dict):
+        headers = replace_lambda_in_dict(response_lambda, headers)
+    response_lambda = response.get("status", "lambda s: s")
+    response_lambda = str_as_lambda(response_lambda)
+    if response_lambda:
+        try:
+            status = response_lambda(status)
+        except Exception:
+            pass
     ctx.log.debug("Response {}: headers={} content={}".format(status, headers, content))
     return http.HTTPResponse.make(status, content, headers)
 
@@ -780,6 +929,12 @@ def response(flow: http.HTTPFlow) -> None:
         if response:
             flow.response = make_response(response, flow.response.status_code, flow.response.content, flow.response.headers)
             ctx.log.debug("Replace response {}: {}".format(flow.request.path, flow.response))
+    replace_lambda = config.get("replace_lambda")
+    if replace_lambda:
+        response = replace_lambda.get("response", replace_lambda)
+        if response:
+            flow.response = make_response_lambda(response, flow.response.status_code, flow.response.content, flow.response.headers)
+            ctx.log.debug("Replace response {}: {}".format(flow.request.path, flow.response))
     modify = config.get("modify", [])
     if isinstance(modify, dict) or isinstance(modify, str):
         modify = [ modify ]
@@ -815,6 +970,9 @@ re_request = OrderedDict()
 
 # Regex paths for responses.
 re_response = OrderedDict()
+
+# Compiled code objects indexed by string.
+co_cache = {}
 
 # Hit counters (for `count` and `once`).
 hit_count = {}
