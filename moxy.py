@@ -388,6 +388,35 @@ def lambda_with_args(lambda_func: str, index: int):
     """
     return re.sub("^\\s*lambda\\s*$", "lambda _", lambda_func[:index]) + lambda_func[index:]
 
+def compiled_co_for(src_str: str):
+    """
+    Returns a compiled code object for the string `src_str`.
+    The compiled code objects are cached in memory.
+    """
+    global co_cache
+    result = co_cache.get(src_str)
+    if result is None:
+        result = compile(src_str, "<string>", "eval")
+        co_cache[src_str] = result
+    return result
+
+def str_as_lambda(lambda_func: str):
+    """
+    Returns `lambda_func` as a lambda function, if possible.
+    """
+    index = lambda_func.find(":")
+    if index != -1:
+        lambda_func = lambda_with_args(lambda_func, index)
+        try:
+            code_object = compiled_co_for(lambda_func)
+            if code_object.co_consts[1] == "<lambda>":
+                lambda_func = eval(lambda_func)
+                if isinstance(lambda_func, LambdaType) and lambda_func.__name__ == "<lambda>":
+                    return lambda_func
+        except Exception:
+            pass
+    return None
+
 def replace_lambda_in_dict(replace_lambda: dict, dictionary):
     """
     For each value in `replace_lambda`, performs corresponding replacement (dict
@@ -398,18 +427,10 @@ def replace_lambda_in_dict(replace_lambda: dict, dictionary):
         if isinstance(replace_lambda_value, dict):
             dictionary[key] = replace_lambda_in_dict(replace_lambda_value, dictionary.get(key, {}))
         else:
-            index = replace_lambda_value.find(":")
-            if index != -1:
-                replace_lambda_value = lambda_with_args(replace_lambda_value, index)
+            replace_lambda_value = str_as_lambda(replace_lambda_value)
+            if replace_lambda_value:
                 try:
-                    code_object = compile(replace_lambda_value, "<lambda>", "eval")
-                    if code_object.co_consts[1] == "<lambda>":
-                        replace_lambda_value = eval(replace_lambda_value)
-                        if isinstance(replace_lambda_value, LambdaType) and replace_lambda_value.__name__ == "<lambda>":
-                            try:
-                                dictionary[key] = replace_lambda_value(dictionary.get(key, ""))
-                            except Exception:
-                                pass
+                    dictionary[key] = replace_lambda_value(dictionary.get(key, ""))
                 except Exception:
                     pass
     return dictionary
@@ -422,38 +443,22 @@ def replace_lambda_in_content(replace_lambda: Union[dict,str,list], content):
         content = replace_lambda_in_dict(replace_lambda, content_as_object(content) or {})
     elif replace_lambda:
         if isinstance(replace_lambda, str):
-            index = replace_lambda.find(":")
-            if index != -1:
-                replace_lambda = lambda_with_args(replace_lambda, index)
+            replace_lambda = str_as_lambda(replace_lambda)
+            if replace_lambda:
                 try:
-                    code_object = compile(replace_lambda, "<lambda>", "eval")
-                    if code_object.co_consts[1] == "<lambda>":
-                        replace_lambda = eval(replace_lambda)
-                        if isinstance(replace_lambda, LambdaType) and replace_lambda.__name__ == "<lambda>":
-                            try:
-                                content = replace_lambda(content)
-                            except ValueError as error:
-                                ctx.log.error("Invalid JSON: {}: after replace: {}".format(error, replace_lambda))
-                            except Exception:
-                                pass
+                    content = replace_lambda(content)
+                except ValueError as error:
+                    ctx.log.error("Invalid JSON: {}: after replace: {}".format(error, replace_lambda))
                 except Exception:
                     pass
         else:
             sub_re, replacement = compiled_re_for(replace_lambda[0]), replace_lambda[1]
-            index = replacement.find(":")
-            if index != -1:
-                replacement = lambda_with_args(replacement, index)
+            replacement = str_as_lambda(replacement)
+            if replacement:
                 try:
-                    code_object = compile(replacement, "<lambda>", "eval")
-                    if code_object.co_consts[1] == "<lambda>":
-                        replacement = eval(replacement)
-                        if isinstance(replacement, LambdaType) and replacement.__name__ == "<lambda>":
-                            try:
-                                content = sub_re.sub(replacement, content_as_str(content))
-                            except ValueError as error:
-                                ctx.log.error("Invalid JSON: {}: after replace: {}".format(error, replace_lambda))
-                            except Exception:
-                                pass
+                    content = sub_re.sub(replacement, content_as_str(content))
+                except ValueError as error:
+                    ctx.log.error("Invalid JSON: {}: after replace: {}".format(error, replace_lambda))
                 except Exception:
                     pass
     return content
@@ -522,7 +527,7 @@ def encode_content(content: Union[str,list,dict]) -> Tuple[bytes, str]:
     if isinstance(content, str):
         try:
             with open(content, "rb") as content_file:
-                if content.endswith(".html"):
+                if content.endswith("html"):
                     content_type = "text/html"
                 elif content.endswith(".xml"):
                     content_type = "text/xml"
@@ -589,50 +594,26 @@ def make_response_lambda(response: Union[str,dict], status, content, headers) ->
     else:
         response_lambda = response.get("content", "lambda s: s")
     content, content_type = encode_content(content)
-    index = response_lambda.find(":")
-    if index != -1:
-        response_lambda = lambda_with_args(response_lambda, index)
+    response_lambda = str_as_lambda(response_lambda)
+    if response_lambda:
         try:
-            code_object = compile(response_lambda, "<lambda>", "eval")
-            if code_object.co_consts[1] == "<lambda>":
-                response_lambda = eval(response_lambda)
-                if isinstance(response_lambda, LambdaType) and response_lambda.__name__ == "<lambda>":
-                    try:
-                        content, content_type = encode_content(response_lambda(content_as_str(content)))
-                    except Exception:
-                        pass
+            content, content_type = encode_content(response_lambda(content_as_str(content)))
         except Exception:
             pass
     response_lambda = response.get("type", "lambda s: s")
     content_type = headers.get("Content-Type", content_type)
-    index = response_lambda.find(":")
-    if index != -1:
-        response_lambda = lambda_with_args(response_lambda, index)
+    response_lambda = str_as_lambda(response_lambda)
+    if response_lambda:
         try:
-            code_object = compile(response_lambda, "<lambda>", "eval")
-            if code_object.co_consts[1] == "<lambda>":
-                response_lambda = eval(response_lambda)
-                if isinstance(response_lambda, LambdaType) and response_lambda.__name__ == "<lambda>":
-                    try:
-                        content_type = response_lambda(content_type)
-                    except Exception:
-                        pass
+            content_type = response_lambda(content_type)
         except Exception:
             pass
     response_lambda = response.get("charset", "lambda s: s")
     charset = mock_config.get("charset", "utf-8")
-    index = response_lambda.find(":")
-    if index != -1:
-        response_lambda = lambda_with_args(response_lambda, index)
+    response_lambda = str_as_lambda(response_lambda)
+    if response_lambda:
         try:
-            code_object = compile(response_lambda, "<lambda>", "eval")
-            if code_object.co_consts[1] == "<lambda>":
-                response_lambda = eval(response_lambda)
-                if isinstance(response_lambda, LambdaType) and response_lambda.__name__ == "<lambda>":
-                    try:
-                        charset = response_lambda(charset)
-                    except Exception:
-                        pass
+            charset = response_lambda(charset)
         except Exception:
             pass
     if charset and not ((";" in content_type) or ("image" in content_type)):
@@ -642,18 +623,10 @@ def make_response_lambda(response: Union[str,dict], status, content, headers) ->
     if isinstance(response_lambda, dict):
         headers = replace_lambda_in_dict(response_lambda, headers)
     response_lambda = response.get("status", "lambda s: s")
-    index = response_lambda.find(":")
-    if index != -1:
-        response_lambda = lambda_with_args(response_lambda, index)
+    response_lambda = str_as_lambda(response_lambda)
+    if response_lambda:
         try:
-            code_object = compile(response_lambda, "<lambda>", "eval")
-            if code_object.co_consts[1] == "<lambda>":
-                response_lambda = eval(response_lambda)
-                if isinstance(response_lambda, LambdaType) and response_lambda.__name__ == "<lambda>":
-                    try:
-                        status = response_lambda(status)
-                    except Exception:
-                        pass
+            status = response_lambda(status)
         except Exception:
             pass
     ctx.log.debug("Response {}: headers={} content={}".format(status, headers, content))
@@ -997,6 +970,9 @@ re_request = OrderedDict()
 
 # Regex paths for responses.
 re_response = OrderedDict()
+
+# Compiled code objects indexed by string.
+co_cache = {}
 
 # Hit counters (for `count` and `once`).
 hit_count = {}
