@@ -228,16 +228,24 @@ def response_matches_config(response: Optional[http.HTTPResponse], config: dict)
         return False
     return True
 
+def resolve_value(value):
+    """
+    Resolves `value` into the final, expanded value, e.g., loads file contents
+    referenced from value strings.
+    """
+    if isinstance(value, str) and (value.startswith(".") and (value.endswith(".json") or value.endswith(".js"))):
+        try:
+            with open(value) as value_file:
+                value = json.load(value_file)
+        except:
+            pass
+    return value
+
 def merge_content(merge, content):
     """
     Merges `merge` into `content` recursively for dictionaries and lists.
     """
-    if isinstance(merge, str) and (merge.startswith(".") and (merge.endswith(".json") or merge.endswith(".js"))):
-        try:
-            with open(merge) as merge_file:
-                merge = json.load(merge_file)
-        except:
-            pass
+    merge = resolve_value(merge)
     if isinstance(merge, dict):
         if isinstance(content, dict):
             for key in merge:
@@ -278,6 +286,7 @@ def merge_content(merge, content):
         else:
             content = merge
     elif isinstance(merge, list):
+        merge = list(map(resolve_value, merge))
         if isinstance(content, list):
             content = content + merge
         elif content is None:
