@@ -639,8 +639,8 @@ recursively with the content such that any new keys and values are
 inserted and any matching existing keys are replaced on the
 innermost level of nesting.
 
-If any dictionary value nested inside `merge` is a string beginning
-with a dot `.` and ending with `.json`, the corresponding file is
+If any dictionary or array member value nested inside `merge` is a string
+beginning with a dot `.` and ending with `.json`, the corresponding file is
 loaded and substituted for the string before merging.
 
 For example:
@@ -730,6 +730,32 @@ For example:
     }
   }
 ]
+```
+
+###### Merge Replace With
+
+Sometimes `merge` is desired to combine values on the top level(s) of a
+dictionary, but a nested dictionary or array should still be replaced entirely.
+While this can be done as a multi-step modification (first delete the old
+values and then merge with the new), there is a shorthand available:
+if a value anywhere inside a `merge` is a dictionary containing only the key
+`replace_with`, the value corresponding to the dictionary position is
+replaced entirely with the value of that key.
+
+For example:
+
+``` json
+"modify":{
+  "merge":{
+    "top_level": {
+      "nested_array": {
+        "replace_with": {
+          "new_value": [ "new_array" ]
+        }
+      }
+    }
+  }
+} 
 ```
 
 ## Authors

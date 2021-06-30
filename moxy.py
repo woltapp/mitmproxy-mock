@@ -247,7 +247,9 @@ def merge_content(merge, content):
     """
     merge = resolve_value(merge)
     if isinstance(merge, dict):
-        if isinstance(content, dict):
+        if ("replace_with" in merge) and len(merge) == 1:
+            content = resolve_value(merge["replace_with"])
+        elif isinstance(content, dict):
             for key in merge:
                 content[key] = merge_content(merge[key], content.get(key))
         elif isinstance(content, list) and ("where" in merge):
