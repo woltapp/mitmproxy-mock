@@ -506,6 +506,11 @@ The following actions are available in both response and request handlers:
 * `pass` – skips any further actions and passes the request or response
   through
 * `log` – logs the contents of the request or response
+* `terminate` – terminates the entire moxy/mitmproxy process when matched
+  (e.g., for ending automated tests gracefully)
+
+The above actions are handled in the order listed here (i.e., `pass` will
+cause `log` and/or `terminate` to not take effect).
 
 The following actions are available only in request handlers:
 

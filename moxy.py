@@ -722,6 +722,9 @@ def resolve_config(flow: http.HTTPFlow, event: str) -> Optional[dict]:
             ctx.log.info("{}: {}".format(msg, flow.request))
         else:
             ctx.log.info("{}: {} -> {}".format(msg, flow.request, flow.response))
+    if config.get("terminate", False):
+        ctx.log.info("Terminate {}".format(config.get("terminate")))
+        ctx.master.shutdown()
     return config
 
 def save_flow(save, flow: http.HTTPFlow, event: str) -> None:
