@@ -92,7 +92,7 @@ def matches_value_or_list(value, allow) -> bool:
                 return True
     return False
 
-def request_matches_config(request: http.HTTPRequest, config: dict) -> bool:
+def request_matches_config(request: http.Request, config: dict) -> bool:
     """
     Returns whether `request` is matched by `config`. This checks the following:
 
@@ -204,7 +204,7 @@ def content_matches(content_str: Optional[str], allow: Union[str,list,dict], con
             return False
     return True
 
-def response_matches_config(response: Optional[http.HTTPResponse], config: dict) -> bool:
+def response_matches_config(response: Optional[http.Response], config: dict) -> bool:
     """
     Returns whether `response` is matched by `config`. This checks the following:
 
@@ -464,9 +464,9 @@ def encode_content(content: Union[str,list,dict]) -> Tuple[bytes, str]:
                 content_type = "text/html"
     return content_as_str(content).encode("utf-8"), content_type + "; charset=utf-8"
 
-def make_response(response: Union[str,dict], status, content, headers) -> http.HTTPResponse:
+def make_response(response: Union[str,dict], status, content, headers) -> http.Response:
     """
-    Return a new `HTTPResponse` object constructed from the configuration
+    Return a new `Response` object constructed from the configuration
     `response`, with the status code, content and headers defaulting to the
     given values unless overridden by `response`.
 
@@ -492,7 +492,12 @@ def make_response(response: Union[str,dict], status, content, headers) -> http.H
         headers.update(merge_headers)
     status = response.get("status", status)
     ctx.log.debug("Response {}: headers={} content={}".format(status, headers, content))
-    return http.HTTPResponse.make(status, content, headers)
+    try:
+        return http.Response.make(int(status), content, headers)
+    except NameError:
+        # Backwards compatibility with mitmproxy < 7.0.0
+        return http.HTTPResponse.make(status, content, headers)
+
 
 def extract_regex_paths(config: OrderedDict) -> OrderedDict:
     """
