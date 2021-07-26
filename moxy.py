@@ -291,12 +291,12 @@ def merge_content(merge, content):
                 content[key] = merge_content(merge[key], None)
     elif isinstance(merge, list):
         merge = list(map(resolve_value, merge))
-        if isinstance(content, list):
-            content = content + merge
-        elif content is None:
-            content = merge
-        else:
-            content = [ content ] + merge
+        if content is None:
+            content = []
+        elif not isinstance(content, list):
+            content = [ content ]
+        for element in merge:
+            content.append(merge_content(element, None))
     else:
         content = merge
     return content
