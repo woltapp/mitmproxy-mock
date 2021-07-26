@@ -10,7 +10,7 @@
 # Authors:
 # * Kimmo Kulovesi (design and initial version), https://github.com/arkku
 #
-# Copyright © 2020 Wolt Enterprises
+# Copyright © 2020–2021 Wolt Enterprises
 #
 
 import json
@@ -443,8 +443,8 @@ def encode_content(content: Union[str,list,dict]) -> Tuple[bytes, str]:
       type inferred from the file's extension (json, js, html, xml, txt, md).
     - A raw string, in which case it is encoded according as UTF-8, and the type
       is inferred to be HTML if it starts with a `<`, otherwise JSON.
-    - An object (such as a dictionary) that can be dumped as JSON, in which case
-      it is converted to JSON.
+    - A list or dictionary that can be dumped as JSON, in which case
+      it is processed as per `merge_content` and converted to UTF-8 JSON.
     """
     content_type = "application/json"
     if isinstance(content, str):
@@ -462,6 +462,17 @@ def encode_content(content: Union[str,list,dict]) -> Tuple[bytes, str]:
         except FileNotFoundError:
             if content.startswith("<"):
                 content_type = "text/html"
+    else:
+        try:
+            processed_content = content
+            if isinstance(content, dict):
+                processed_content = merge_content(content, {})
+            elif isinstance(content, list):
+                processed_content = merge_content(content, [])
+            if processed_content:
+                content = processed_content
+        except:
+            pass
     return content_as_str(content).encode("utf-8"), content_type + "; charset=utf-8"
 
 def make_response(response: Union[str,dict], status, content, headers) -> http.Response:
