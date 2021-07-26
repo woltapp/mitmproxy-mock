@@ -3,7 +3,7 @@
 #
 # The mock configuration is loaded from a JSON file, e.g.:
 #
-#   mitmdump -s moxy.py --set mock=example.json -m reverse:https://foo.com/
+#   mitmdump -s moxy.py --set mock=example.json -m reverse:https://api.foo.com/
 #
 # See config/example.json and README.md for examples and documentation.
 #
@@ -286,7 +286,9 @@ def merge_content(merge, content):
                 else:
                     index += 1
         else:
-            content = merge
+            content = {}
+            for key in merge:
+                content[key] = merge_content(merge[key], None)
     elif isinstance(merge, list):
         merge = list(map(resolve_value, merge))
         if isinstance(content, list):
