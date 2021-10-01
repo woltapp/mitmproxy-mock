@@ -824,6 +824,10 @@ def response(flow: http.HTTPFlow) -> None:
         flow.response.text = content_as_str(modify_content(modify, flow.response.text))
         ctx.log.debug("Modify response {}: {}".format(flow.request.path, modify))
 
+# Called when an error (inside mitmproxy, not from the remote server) occurs.
+def error(flow: http.HTTPFlow):
+    ctx.log.debug("Error {}: {}".format(flow.request.path, flow.error))
+
 # Called when the script is loaded, registers command-line options.
 def load(script) -> None:
     script.add_option("mock", str, "mock.json", "Mock configuration JSON file")
