@@ -256,6 +256,7 @@ def merge_content(merge, content):
             where = merge["where"]
             match_condition = not bool(merge.get("negated", False))
             match_move = merge.get("move")
+            match_insert = merge.get("insert")
             index, end_index = 0, len(content)
             while index < end_index:
                 element = content[index]
@@ -263,6 +264,8 @@ def merge_content(merge, content):
                     new_element = element
                     if "replace" in merge:
                         new_element = merge_content(merge["replace"], None)
+                    elif "content" in merge:
+                        new_element = merge_content(merge["content"], None)
                     if "merge" in merge:
                         new_element = merge_content(merge["merge"], new_element or {})
                     elif merge.get("delete"):
@@ -278,6 +281,13 @@ def merge_content(merge, content):
                         else:
                             content.append(new_element)
                             end_index -= 1
+                    elif match_insert:
+                        if match_insert == "before":
+                            content.insert(index, new_element)
+                        else:
+                            content.insert(index + 1, new_element)
+                        index += 1
+                        end_index += 1
                     else:
                         content[index] = new_element
                         index += 1

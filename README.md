@@ -689,10 +689,13 @@ The `where` dictionary may contain the following keys:
 
 * `where` – an object that is matched against elements of the array;
   any modifications are done only on matching elements
-* `replace` – a replacement object that overwrites any elements
+* `replace` or `content` – a replacement object that overwrites any elements
   in the array matching the `where` object
 * `merge` – an object that is merged (only) with elements in the array
   matching the `where` object
+* `insert` – a string, either `before` or `after`, which causes the resulting
+  element to be inserted before or after the matched element, rather than
+  replacing it (typically paired with `content` for the new object)
 * `move` – a string, either `head` or `tail`, which causes any elements
   matching `where` to be moved to the head (beginning) or the tail (end) of
   the array, respectively
