@@ -247,8 +247,10 @@ def merge_content(merge, content):
     """
     merge = resolve_value(merge)
     if isinstance(merge, dict):
-        if ("replace_with" in merge) and len(merge) == 1:
+        if len(merge) == 1 and ("replace_with" in merge):
             content = resolve_value(merge["replace_with"])
+        elif len(merge) == 1 and ("replace_in" in merge):
+            content = replace_in_content(merge["replace_in"], content)
         elif isinstance(content, dict):
             for key in merge:
                 content[key] = merge_content(merge[key], content.get(key))
@@ -398,7 +400,10 @@ def replace_in_content(replace: Union[str,list,dict], content):
                 return replace
         sub_re, replacement = compiled_re_for(replace[0]), replace[1]
         try:
+            content_is_str = isinstance(content, str)
             content = sub_re.sub(replacement, content_as_str(content))
+            if not content_is_str:
+                content = content_as_object(content)
         except ValueError as error:
             ctx.log.error("Invalid JSON: {}: after replace: {}".format(error, replace))
     return content

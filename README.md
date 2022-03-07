@@ -570,7 +570,7 @@ Examples of request handlers:
       "respond":{
         "content": {
           "embedded":{
-            "json": [ "object "]
+            "json": [ "object" ]
           }
         }
       }
@@ -763,8 +763,33 @@ For example:
       }
     }
   }
-} 
+}
 ```
+
+###### Merge Replace With
+
+Similarly to `replace_with`, a `merge` dictionary may contain only the key
+`replace_in`, in which case the value of that key is treated as a regular
+expression substitution similarly to `replace` and applied to the corresponding
+value in the content.
+
+For example:
+
+``` json
+"modify":{
+  "merge":{
+    "top_level": {
+      "string_key": {
+        "replace_in": [ "$", " text added to the end" ]
+      }
+    }
+  }
+}
+```
+
+Similarly to `replace`, the `replace_in` replacement treats the value as an
+string, so when applied to JSON dictionary or array values, it is possible to
+produce invalid JSON as the output.
 
 ## Authors
 
